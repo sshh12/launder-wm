@@ -45,8 +45,11 @@ jobs:
       # read by nothing but the `alembic upgrade head` step below, so the
       # postgres:17 service proved that migrations apply and nothing else while
       # §11.6 claimed the contract suite ran against it.
-      TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/launder_test
-      TEST_SQLITE_URL: sqlite+aiosqlite:///:memory:
+      # Quoted: a plain YAML scalar cannot carry "://" plus a bare ":" — unquoted,
+      # this made the whole workflow unparseable and every run failed in 0s with
+      # "workflow file issue", which reports as a FAILING CI that never ran a test.
+      TEST_POSTGRES_URL: "postgresql://postgres:postgres@localhost:5432/launder_test"
+      TEST_SQLITE_URL: "sqlite+aiosqlite:///:memory:"
       # Turns a SKIPPED Postgres leg into a FAILURE here. A gate that can pass
       # by not running is not a gate.
       REQUIRE_POSTGRES: "1"
