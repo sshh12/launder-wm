@@ -12,7 +12,20 @@
  * `tests/**` is type-checked by `npm run build`.
  */
 
+import { readFileSync } from "node:fs";
+
 import { expect, test } from "@playwright/test";
+
+/**
+ * Every ruleset name the rail can be asked to print, read from the file that
+ * defines them rather than copied here — a name added to levels.toml is a
+ * string the railhead has to fit, and this list is how the layout finds out.
+ */
+const RULESET_NAMES = [
+  ...readFileSync(new URL("../../../data/config/levels.toml", import.meta.url), "utf8").matchAll(
+    /^\s*name\s*=\s*"([^"]+)"/gm,
+  ),
+].map((m) => m[1]);
 
 async function fresh(page) {
   await page.goto("/?level=1");
@@ -86,6 +99,76 @@ test.describe("the instrument", () => {
     expect(labels).toEqual(["0", "25", "50", "75", "100"]);
   });
 
+  test("reads as an instrument and offers no control", async ({ page }) => {
+    await returning(page);
+    // role="meter" is strictly read-only. Nothing inside it takes a drag, so
+    // nothing inside it may LOOK like it does: no control, no focus stop, and
+    // a cursor that does not promise one.
+    await expect(
+      page.locator("#meter input, #meter button, #meter [tabindex], #meter [role='slider']"),
+    ).toHaveCount(0);
+    const meter = await page.locator("#meter").evaluate((el) => ({
+      cursor: getComputedStyle(el).cursor,
+      role: el.getAttribute("role"),
+    }));
+    expect(meter.role).toBe("meter");
+    expect(meter.cursor).toBe("default");
+  });
+
+  test("the threshold mark stays legible against the fill that covers it", async ({ page }) => {
+    await returning(page);
+    const paint = await page.evaluate(() => {
+      const el = (id) => document.getElementById(id);
+      const box = (node) => node.getBoundingClientRect();
+      // Resolve a token to the same rgb() spelling getComputedStyle returns,
+      // so the comparison below is about COLOUR and not about notation.
+      const rgb = (value) => {
+        const probe = document.createElement("div");
+        probe.style.backgroundColor = value;
+        document.body.appendChild(probe);
+        const out = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return out;
+      };
+      const root = getComputedStyle(document.documentElement);
+      const s = getComputedStyle(el("notch"));
+      const notch = box(el("notch"));
+      const tri = box(el("tri"));
+      // Whatever the notch is actually drawn with — a background, a border, or
+      // both — every colour it puts on the face.
+      const notchInk = [];
+      if (s.backgroundColor !== "rgba(0, 0, 0, 0)") notchInk.push(s.backgroundColor);
+      if (s.backgroundImage !== "none") notchInk.push(s.backgroundImage);
+      if (s.borderLeftStyle !== "none" && Number.parseFloat(s.borderLeftWidth) > 0) {
+        notchInk.push(s.borderLeftColor);
+      }
+      return {
+        // The fill's two states. Compared against the tokens rather than
+        // against the element, whose background-color is mid-transition for
+        // 380ms after any reading lands.
+        fillStates: [rgb(root.getPropertyValue("--hot")), rgb(root.getPropertyValue("--cold"))],
+        notchInk,
+        notchCx: notch.left + notch.width / 2,
+        triCx: tri.left + tri.width / 2,
+        faceBottom: box(el("face")).bottom,
+        gutTop: box(document.querySelector(".gutrow")).top,
+        scaleTop: box(el("scalerow")).top,
+      };
+    });
+    // It is painted with something...
+    expect(paint.notchInk.length).toBeGreaterThan(0);
+    // ...and with nothing the fill also uses. The fill runs from 0 up to the
+    // needle and passes straight over the one mark that defines winning; in
+    // either of the fill's own two colours that mark is camouflaged against
+    // the bar that moves.
+    for (const ink of paint.notchInk) expect(paint.fillStates).not.toContain(ink);
+    // "Under N to clear" and its pointer belong to the notch: same centre line,
+    // and directly under the face rather than below the printed numerals.
+    expect(Math.abs(paint.notchCx - paint.triCx)).toBeLessThanOrEqual(1);
+    expect(paint.gutTop).toBeLessThan(paint.scaleTop);
+    expect(paint.gutTop - paint.faceBottom).toBeLessThanOrEqual(4);
+  });
+
   test("reads a bare 0-100 number, never a decimal and never a percentage", async ({ page }) => {
     await returning(page);
     const num = (await page.locator("#num").textContent()) ?? "";
@@ -107,6 +190,58 @@ test.describe("the campaign", () => {
     expect(levelno).toMatch(/\d+.*\d+/);
     await expect(page.locator("#lvlname")).not.toBeEmpty();
     await expect(page.locator("#lvlid")).toHaveCount(0);
+  });
+
+  /**
+   * THE TRUNCATION REGRESSION. The railhead was one flex row in which every
+   * item was `flex: none` except the ruleset name, which carried
+   * `text-overflow: ellipsis` — so the name was the only thing that could
+   * absorb overflow, and lengthening the readout from "AI detected" to "AI
+   * watermark detected" collapsed "Clean it" to "C…" on a phone. A level whose
+   * name the player cannot read is a level whose rules they cannot anticipate.
+   */
+  test.describe("at 320px, the narrowest supported width", () => {
+    test.use({ viewport: { width: 320, height: 844 } });
+
+    test("prints the level, its total AND the ruleset name in full", async ({ page }) => {
+      await returning(page);
+      const rows = await page.evaluate((names) => {
+        const chip = document.getElementById("lvlchip");
+        const name = document.getElementById("lvlname");
+        const levelno = document.getElementById("levelno");
+        // scrollWidth > clientWidth is the clip itself, whatever draws it —
+        // an ellipsis, a hidden overflow, or a box squeezed to nothing.
+        const clipped = (el) => el.scrollWidth > el.clientWidth + 1;
+        const out = [];
+        for (const text of names) {
+          name.textContent = text;
+          out.push({
+            text,
+            rendered: name.textContent,
+            nameWidth: name.getBoundingClientRect().width,
+            levelnoWidth: levelno.getBoundingClientRect().width,
+            chipClipped: clipped(chip),
+            levelnoClipped: clipped(levelno),
+            hOverflow:
+              document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          });
+        }
+        return out;
+      }, RULESET_NAMES);
+
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(row.chipClipped, `"${row.text}" is clipped in the railhead at 320px`).toBe(false);
+        expect(row.levelnoClipped, `the level counter is clipped at 320px`).toBe(false);
+        // Both registers are actually on screen, not merely un-ellipsised.
+        expect(row.nameWidth, `"${row.text}" renders at zero width`).toBeGreaterThan(0);
+        expect(row.levelnoWidth).toBeGreaterThan(0);
+        // Nothing was solved by pushing the rail off the side of the phone.
+        expect(row.hOverflow, `"${row.text}" makes the page scroll sideways`).toBeLessThanOrEqual(
+          0,
+        );
+      }
+    });
   });
 
   test("credits the author with two tappable links", async ({ page }) => {

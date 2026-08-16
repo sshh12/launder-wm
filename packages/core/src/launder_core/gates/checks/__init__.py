@@ -13,8 +13,10 @@ what runs and `GateCheck.phase` decides what order is legal.
 from __future__ import annotations
 
 from launder_core.gates.checks.close_paraphrase import CloseParaphrase
+from launder_core.gates.checks.detector_floor import DetectorFloor
 from launder_core.gates.checks.detector_threshold import DetectorThreshold
 from launder_core.gates.checks.edit_budget import EditBudget
+from launder_core.gates.checks.edit_region import EditRegion
 from launder_core.gates.checks.llm_gate import LlmGate
 from launder_core.gates.checks.locked_phrase import LockedPhrase
 from launder_core.gates.checks.unicode_sanitation import UnicodeSanitation
@@ -23,8 +25,10 @@ from launder_core.gates.checks.word_floor import WordFloor
 
 __all__ = [
     "CloseParaphrase",
+    "DetectorFloor",
     "DetectorThreshold",
     "EditBudget",
+    "EditRegion",
     "LlmGate",
     "LockedPhrase",
     "UnicodeSanitation",

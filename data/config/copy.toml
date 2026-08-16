@@ -182,6 +182,16 @@ blurb  = "The code still has to work. It runs against a fixed set of tests, and 
 reject = "Test failed: {test_name}."
 reject_timeout = "The code did not finish in {timeout_ms} ms."
 
+[check.edit_region]
+label  = "Only the first {editable_prefix_words} words"
+blurb  = "On this level you may only change the opening. That is more generous than it sounds: the detector reads each word in the context of the ones before it, so changing a word alters what it sees for everything that follows and nothing that came earlier. An edit near the start is worth more than the same edit near the end."
+reject = "Word {first_bad_word_index} is outside the opening. On this level only the first {editable_prefix_words} words can change."
+
+[check.detector_floor]
+label  = "Not too clean"
+blurb  = "There is a bottom to this level as well as a top. The reading is measured against ordinary writing, so a number far below the middle is as unusual as one far above it — text that avoids the pattern that hard looks like text written by someone who knew the pattern. Land inside the window; do not erase."
+reject = "Too clean. The needle reads {z_display} and has to stay at or above {z_floor_display}."
+
 [check.detector_threshold]
 label  = "Under the line"
 blurb  = "This is the win condition. The needle shows how much watermark evidence the detector finds. It has to sit at or below the line when you check. The reading you see while typing is the same one used here."

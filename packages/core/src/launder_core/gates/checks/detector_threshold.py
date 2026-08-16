@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from typing import Any, ClassVar
 
 from launder_core.gates.registry import GateContext, GateDependencyError, Phase, register
+from launder_core.readout import format_points
 from launder_core.schemas import CheckResult
 
 __all__ = ["DetectorThreshold", "format_z"]
@@ -75,10 +76,15 @@ class DetectorThreshold:
         # 2.33" when the real bar was -0.67 and 2.33 would not clear.
         # `z_star_display` is kept because it is z*, the published notch, and
         # the checklist blurb refers to it.
+        # POINTS, NOT z. These render into the rejection the player reads, and
+        # the meter beside it prints the 0-100 relabelling — quoting raw z here
+        # put two number systems on one screen ("reads 4.0, has to reach 2.3"
+        # under a needle showing 50 and a notch at 36). The KEYS keep their `z_`
+        # names because copy.toml's templates are written against them.
         rendered = {
-            "z_display": format_z(reading.z),
-            "z_star_display": format_z(reading.z_star),
-            "z_target_display": format_z(reading.z_star + max_z),
+            "z_display": format_points(reading.z, reading.z_star),
+            "z_star_display": format_points(reading.z_star, reading.z_star),
+            "z_target_display": format_points(reading.z_star + max_z, reading.z_star),
         }
         meta = {
             "score": reading.score,

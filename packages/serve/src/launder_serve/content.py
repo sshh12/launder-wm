@@ -24,7 +24,7 @@ import hashlib
 import json
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from launder_core.gates.checks.close_paraphrase import assert_tables_match_files
 from launder_core.gates.feedback import CopyBook, load_copy
-from launder_core.levels import load_levels
+from launder_core.levels import load_levels, validate_level
 from launder_core.schemas import (
     DetectorExpectation,
     LevelConfig,
@@ -53,6 +53,7 @@ __all__ = [
     "LevelSpec",
     "ProgressionFile",
     "WatermarkFile",
+    "apply_level_overrides",
     "error_message",
     "load_content",
 ]
@@ -315,6 +316,20 @@ class LevelSpec(BaseModel):
     #: An `L1..L6` id from `levels.toml`. The player never sees this string; it
     #: names the ordered CHECK LIST the level is played under.
     rules: str
+    #: PER-LEVEL PARAM OVERRIDES, merged over the ruleset's own params:
+    #: `overrides = { edit_budget = { max_word_distance = 6 } }`.
+    #:
+    #: This exists because a budget is only a real constraint when it is tuned
+    #: to ITS passage. Budgets used to live only on the ruleset, so one number
+    #: had to serve every level sharing it — and the number that fits the
+    #: hardest passage is no constraint at all on the easiest. Measured: the
+    #: shipped budgets of 12 and 18 were 2-6x what a greedy attack actually
+    #: spent, so they never once decided an outcome.
+    #:
+    #: Validated at BOOT against the same registry rules as levels.toml: an
+    #: override for a check the ruleset does not run, or a param that check
+    #: does not read, is a startup failure rather than a rule nobody enforces.
+    overrides: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ProgressionFile(BaseModel):
@@ -595,6 +610,41 @@ class CampaignLevel:
     n: int
     passage_id: str
     level_id: str
+    #: See `LevelSpec.overrides`. Applied by `Content.resolve`, which is the one
+    #: place a playable ruleset is produced, so boot rendering and the gate
+    #: cannot disagree about what this level's rules actually are.
+    overrides: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+
+
+def apply_level_overrides(
+    level: LevelConfig, overrides: Mapping[str, Mapping[str, Any]], *, level_n: int
+) -> LevelConfig:
+    """Merge a campaign level's param overrides over its ruleset.
+
+    Re-runs core's own `validate_level` on the result, so an override is held to
+    exactly the standard `levels.toml` is: unknown check, unread param, missing
+    required param and out-of-order phases all raise here rather than producing
+    a level whose rules quietly differ from what the checklist advertises.
+    """
+    if not overrides:
+        return level
+    names = {spec.check for spec in level.checks}
+    unknown = set(overrides) - names
+    if unknown:
+        raise ValueError(
+            f"progression.toml level {level_n} overrides check(s) {sorted(unknown)}, which "
+            f"ruleset {level.id} does not run (it runs {sorted(names)}). An override on a "
+            "check that never executes is a constraint the player is never held to."
+        )
+    checks = tuple(
+        spec.model_copy(update={"params": {**spec.params, **dict(overrides[spec.check])}})
+        if spec.check in overrides
+        else spec
+        for spec in level.checks
+    )
+    merged = level.model_copy(update={"checks": checks})
+    validate_level(merged)
+    return merged
 
 
 @dataclass(frozen=True)
@@ -663,7 +713,12 @@ class Content:
         return None
 
     def resolve(self, n: int) -> tuple[PassageBundle, LevelConfig] | None:
-        """`level_n` -> the passage to render and the ruleset to play it under."""
+        """`level_n` -> the passage to render and the ruleset to play it under.
+
+        THE ONE PLACE per-level overrides are applied. Both the boot renderer
+        and `/api/submit` come through here, so the rules the player is shown in
+        the checklist are by construction the rules the gate runs.
+        """
         entry = self.campaign_level(n)
         if entry is None:
             return None
@@ -671,7 +726,7 @@ class Content:
         ruleset = self.ruleset(entry.level_id)
         if bundle is None or ruleset is None:
             return None
-        return bundle, ruleset
+        return bundle, apply_level_overrides(ruleset, entry.overrides, level_n=n)
 
 
 def load_content(
@@ -840,5 +895,12 @@ def _resolve_campaign(
                 f"{spec.n - 1}."
             )
             break
-        resolved.append(CampaignLevel(n=spec.n, passage_id=spec.passage_id, level_id=spec.rules))
+        resolved.append(
+            CampaignLevel(
+                n=spec.n,
+                passage_id=spec.passage_id,
+                level_id=spec.rules,
+                overrides=spec.overrides,
+            )
+        )
     return tuple(resolved), False

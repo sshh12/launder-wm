@@ -158,9 +158,11 @@ def test_every_check_named_by_the_plan_is_registered() -> None:
         "unicode_sanitation",
         "word_floor",
         "edit_budget",
+        "edit_region",
         "locked_phrase",
         "unit_test",
         "close_paraphrase",
+        "detector_floor",
         "detector_threshold",
         "llm_gate",
     }

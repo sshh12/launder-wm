@@ -38,7 +38,7 @@ from launder_core.schemas import (
     SubmitResponse,
 )
 from launder_serve.api.deps import AppState, state_of
-from launder_serve.errors import RateLimited
+from launder_serve.errors import NotFound, RateLimited
 from launder_serve.judge.gate import RATE_LIMITED, REQUEST_CLIENT_KEY
 from launder_serve.repo.protocol import SubmissionRecord
 
@@ -54,11 +54,24 @@ async def submit(request: Request, body: SubmitRequest, response: Response) -> S
     response.headers["Cache-Control"] = "no-store"
 
     bundle = state.passage_or_404(body.passage_id)
-    ruleset = state.ruleset_or_404(body.level_id)
     # The request does not carry `level_n` — the client asserts nothing about
     # where it is in the campaign, exactly as it asserts nothing about its own
     # score. The position is the passage's, and the server owns the mapping.
     level_n = state.level_n_or_404(body.passage_id)
+    # The client's `level_id` is still validated, so naming a ruleset that does
+    # not exist is the ordinary 404 — but it is NOT what gets run.
+    state.ruleset_or_404(body.level_id)
+    # THE RULESET COMES FROM THE CAMPAIGN POSITION, NOT FROM THE REQUEST, because
+    # `Content.resolve` is the only place per-level param overrides are applied.
+    # Looking the ruleset up by `level_id` returned the SHARED definition with
+    # its untuned params: level 3 advertised a budget of 6 in the checklist the
+    # boot payload rendered, and the gate enforced the ruleset's own 12. A level
+    # whose displayed rules are not the rules it enforces is worse than one with
+    # no rules at all.
+    resolved = state.content.resolve(level_n)
+    if resolved is None:  # pragma: no cover - level_n_or_404 already proved it
+        raise NotFound("unknown_passage", passage_id=body.passage_id)
+    _, ruleset = resolved
 
     # Everything below is server-computed. This is the entire anti-cheat story
     # and it is three lines long.
@@ -151,9 +164,18 @@ def _reading_from(gate: GateResult) -> DetectorReading | None:
     number they are shown, which is the one disagreement this game cannot
     survive.
     """
+    # `detector_floor` reports the same reading and can fail BEFORE the
+    # threshold runs (levels.toml orders it first, because the threshold has to
+    # stay adjacent to the judge). Without it in this tuple, a player rejected
+    # for over-scrubbing would be shown a reading of 0.0 beside a message about
+    # their reading being too low.
     for result in gate.trace:
         meta = result.meta
-        if result.check == "detector_threshold" and "score" in meta and "z" in meta:
+        if (
+            result.check in ("detector_threshold", "detector_floor")
+            and "score" in meta
+            and "z" in meta
+        ):
             return DetectorReading(
                 score=float(meta["score"]),
                 z=float(meta["z"]),

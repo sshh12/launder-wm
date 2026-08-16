@@ -1,6 +1,6 @@
 # data/config/levels.toml — TECH_PLAN.md §7.6
 #
-# The six levels as ORDERED CHECK LISTS. Order is the semantics: every
+# The levels as ORDERED CHECK LISTS. Order is the semantics: every
 # deterministic check runs before `llm_gate`, so a submission that busts the
 # budget, the floor, the locked phrase, the unit test or unicode sanitation
 # costs zero API calls. `detector_threshold` sitting second-to-last is the
@@ -118,4 +118,88 @@ checks = [
   { check = "word_floor", params = { min_words = 120 } },
   { check = "detector_threshold" },
   { check = "llm_gate", params = { require_claims = "required_only", max_missing_claims = 0, max_added_claims = 1 } },
+]
+
+# ===========================================================================
+# THE CAMPAIGN'S OWN RULESETS (L7-L9).
+#
+# L1-L6 are the original six from CONCEPT.md. The three below exist because the
+# campaign was MEASURED and found to be scriptable end to end: "delete whichever
+# single word most lowers z, repeat" clears every L1-L4 level in 3-9 deletions,
+# and neither the budgets (12 and 18, against 3-9 spent) nor `close_paraphrase`
+# (which a 2-word edit satisfies trivially) ever decided an outcome. Each
+# ruleset below introduces one pressure that a hill-climb cannot shrug off.
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Level 4's ruleset. Every edit must land in the opening of the passage.
+#
+# This is the only level that forces the player to confront the direction of
+# the ripple. Context runs left to right, so an edit re-keys the n-grams AFTER
+# it and none before it — which makes the same edit worth far more at the start
+# than at the end. Players who edit wherever the mirror looks hottest never
+# discover this; players who are confined to the first sixty words cannot avoid
+# discovering it.
+[[levels]]
+id         = "L7"
+name       = "Opening only"
+teaches    = "the ripple runs one way — an edit is worth more the earlier it lands"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation" },
+  { check = "word_floor" },
+  { check = "edit_region", params = { editable_prefix_words = 60 } },
+  { check = "detector_threshold" },
+  { check = "llm_gate", params = { require_claims = "required_only", max_missing_claims = 0, max_added_claims = 1 } },
+]
+
+# ---------------------------------------------------------------------------
+# Level 7's ruleset. The reading must land in a WINDOW, not merely under the
+# line: scrub too hard and you fail for looking scrubbed.
+#
+# `min_z` is relative to the notch, exactly like `max_z`, so both bounds move
+# together if the calibration does. -1.2 against z* = 2.3263 puts the window at
+# roughly z 1.13 to 2.33 — about 26 to 36 on the 0-100 meter.
+#
+# ORDER MATTERS HERE, and not in the direction you would guess. `validate_level`
+# enforces that `detector_threshold` sits IMMEDIATELY before `llm_gate` — that
+# adjacency is what keeps submissions which have not yet beaten the watermark
+# away from the paid judge — so the floor cannot be slipped between them. It
+# runs just before instead. Both checks emit the same reading in their meta and
+# `/api/submit` accepts either as the number it reports, so a player rejected
+# for over-scrubbing still sees the reading that rejected them.
+[[levels]]
+id         = "L8"
+name       = "Not too clean"
+teaches    = "a reading far below the null is its own evidence — aim, do not erase"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation" },
+  { check = "word_floor" },
+  { check = "detector_floor", params = { min_z = -1.2 } },
+  { check = "detector_threshold" },
+  { check = "llm_gate", params = { require_claims = "required_only", max_missing_claims = 0, max_added_claims = 1 } },
+]
+
+# ---------------------------------------------------------------------------
+# The finale. Every constraint in the game at once, and two edits to spend.
+#
+# A verified two-edit clear exists for this passage, which is what makes the
+# budget honest: it is the tightest bound that is provably winnable, and it is
+# below the three-to-five edits the greedy attack needs, so the script is
+# excluded by construction rather than by hope.
+[[levels]]
+id         = "L9"
+name       = "All at once"
+teaches    = "everything the campaign taught, spent two words at a time"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation" },
+  { check = "word_floor" },
+  { check = "locked_phrase", params = { phrase_ref = "passage.rules.locked_phrases", match = "whitespace_insensitive" } },
+  { check = "edit_budget", params = { max_word_distance = 2 } },
+  { check = "close_paraphrase", params = { min_content_word_retention = 0.55, max_word_distance_ratio = 0.45, length_ratio = [0.80, 1.25], max_sentence_count_delta = 1, min_sentence_alignment = 0.40 } },
+  { check = "detector_floor", params = { min_z = -1.2 } },
+  { check = "detector_threshold" },
+  { check = "llm_gate", params = { require_claims = "all", max_missing_claims = 0, max_added_claims = 0 } },
 ]

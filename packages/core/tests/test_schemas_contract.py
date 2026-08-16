@@ -240,7 +240,7 @@ def test_sampling_table_is_the_committed_key_material() -> None:
 
 def test_levels_toml_loads_and_orders_its_checks() -> None:
     levels = LevelsFile.model_validate(_toml("config/levels.toml"))
-    assert [x.id for x in levels.levels] == ["L1", "L2", "L3", "L4", "L5", "L6"]
+    assert [x.id for x in levels.levels] == ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9"]
 
     by_id = levels.by_id()
     # ORDER IS THE SEMANTICS: every deterministic check precedes llm_gate, so a

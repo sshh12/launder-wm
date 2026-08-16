@@ -99,9 +99,12 @@ def a_level(**overrides: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # The shipped config
 # ---------------------------------------------------------------------------
-def test_all_six_levels_load_and_validate() -> None:
+def test_every_level_loads_and_validates() -> None:
     levels = load_levels()
-    assert sorted(levels) == ["L1", "L2", "L3", "L4", "L5", "L6"]
+    # L1-L6 are CONCEPT.md's original six; L7-L9 are the campaign's own,
+    # added after the shipped levels were measured and found to be
+    # scriptable end to end.
+    assert sorted(levels) == ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9"]
     for level in levels.values():
         assert isinstance(level, LevelConfig)
         assert level.checks[0].check == "unicode_sanitation"
@@ -138,7 +141,7 @@ def test_l5_drops_the_judge_and_keeps_the_unit_test() -> None:
 
 def test_the_shipped_file_and_the_loader_agree_on_level_count() -> None:
     raw = tomllib.loads(LEVELS_TOML.read_text(encoding="utf-8"))
-    assert len(raw["levels"]) == len(load_levels()) == 6
+    assert len(raw["levels"]) == len(load_levels()) == 9
     assert load_levels_file().judge_version == raw["judge_version"]
 
 

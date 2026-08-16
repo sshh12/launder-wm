@@ -205,6 +205,20 @@ def _declared_params(paths: Paths, name: str, block: dict[str, Any]) -> tuple[se
         declared = getattr(check, "declared_params", None)
         if declared:
             return set(declared), "REGISTRY.declared_params"
+        # Every registered check ALREADY declares both halves of its render
+        # context: `config_params` are the level's knobs a label interpolates
+        # ("{max_word_distance}"), `template_params` are the values the check
+        # computes for its rejection ("{distance}"). Their union is the same
+        # thing `declared_params` would be, so read it rather than consult a
+        # hand-maintained table that has to be edited every time a check is
+        # added — which is precisely the drift the table caused: two new checks
+        # linted as broken while their copy was correct.
+        if check is not None:
+            pair = set(getattr(check, "config_params", ())) | set(
+                getattr(check, "template_params", ())
+            )
+            if pair:
+                return pair, "REGISTRY.config_params|template_params"
     except Exception:
         pass
     if isinstance(block.get("params"), list):

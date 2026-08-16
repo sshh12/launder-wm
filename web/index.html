@@ -202,6 +202,16 @@
 "reject": "Test failed: {test_name}.",
 "reject_timeout": "The code did not finish in {timeout_ms} ms."
 },
+"edit_region": {
+"label": "Only the first {editable_prefix_words} words",
+"blurb": "On this level you may only change the opening. That is more generous than it sounds: the detector reads each word in the context of the ones before it, so changing a word alters what it sees for everything that follows and nothing that came earlier. An edit near the start is worth more than the same edit near the end.",
+"reject": "Word {first_bad_word_index} is outside the opening. On this level only the first {editable_prefix_words} words can change."
+},
+"detector_floor": {
+"label": "Not too clean",
+"blurb": "There is a bottom to this level as well as a top. The reading is measured against ordinary writing, so a number far below the middle is as unusual as one far above it — text that avoids the pattern that hard looks like text written by someone who knew the pattern. Land inside the window; do not erase.",
+"reject": "Too clean. The needle reads {z_display} and has to stay at or above {z_floor_display}."
+},
 "detector_threshold": {
 "label": "Under the line",
 "blurb": "This is the win condition. The needle shows how much watermark evidence the detector finds. It has to sit at or below the line when you check. The reading you see while typing is the same one used here.",
@@ -270,7 +280,7 @@
           <button class="whatbtn" id="whatbtn" type="button" data-copy-aria="primer.open_label">
             ?
           </button>
-          <span class="lvlchip" id="lvlchip"><span id="lvlname"></span></span>
+          <span class="lvlchip" id="lvlchip"><span class="lvlname" id="lvlname"></span></span>
           <div class="readout">
             <span class="num" id="num" data-pending="1">17</span>
             <span class="stateword" id="stateword" data-copy="readout.above"></span>
@@ -290,18 +300,21 @@
           data-copy-aria="readout.meter_name"
         >
           <div class="face" id="face" style="--init-x: 16.6667%; --init-n: 0.1667">
-            <div class="track"></div>
             <div class="fill" id="fill"></div>
             <div class="notch" id="notch"></div>
             <div class="sweep" id="sweep"></div>
             <div class="peak" id="peak" data-snap="1"></div>
             <div class="needle" id="needle"></div>
           </div>
-          <div class="scalerow" id="scalerow"></div>
+          <!-- The threshold's gutter sits between the face and the printed
+               numerals, because the pointer and "Under 36 to clear" name the
+               NOTCH: below the 0..100 row they were a register away from the
+               mark they refer to. -->
           <div class="gutrow">
             <div class="tri" id="tri"></div>
             <div class="floorlbl" id="floorlbl"></div>
           </div>
+          <div class="scalerow" id="scalerow"></div>
         </div>
       </div>
 

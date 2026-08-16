@@ -10,6 +10,7 @@ production, and a hand-rolled fixture config would test the fixture.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from collections.abc import AsyncIterator
@@ -113,6 +114,18 @@ def data_root(tmp_path: Path, real_data_root: Path) -> Path:
     # `progression.toml` is read from the real config, so the fixture campaign
     # is exactly as long as the shipped one and `level_count` is not invented
     # here — a hand-picked count would hide a renumbering mistake in the file.
+    # STRIP THE PER-LEVEL OVERRIDES. The shipped progression tunes each level's
+    # budget to ITS passage — level 3 allows 6 words because 6 is what the real
+    # p10 needs. The passages written below are synthetic, so production's
+    # tuning is meaningless against them and merely makes the API tests
+    # unwinnable: an 8-edit solve is the smallest that clears the detector on
+    # this generated text, and it busts a budget cut for a different passage.
+    # The mapping (level -> passage -> ruleset) is kept exactly as shipped, so a
+    # renumbering mistake in the real file still surfaces here.
+    prog = (root / "config" / "progression.toml").read_text(encoding="utf-8")
+    prog = re.sub(r"(?m)^overrides\s*=.*$", "", prog)
+    (root / "config" / "progression.toml").write_text(prog, encoding="utf-8")
+
     probe = load_content(root, is_production=False)
     for spec in probe.progression.levels:
         payload = _passage(probe.wm_config_id, probe.asset_bundle_id, spec.passage_id, spec.rules)
@@ -231,6 +244,40 @@ def passage_id(campaign_level: CampaignLevel) -> str:
 @pytest.fixture
 def level_id(campaign_level: CampaignLevel) -> str:
     return campaign_level.level_id
+
+
+@pytest.fixture
+def unbudgeted_level(content: Content) -> CampaignLevel:
+    """A campaign level whose ruleset runs NO `edit_budget`.
+
+    The judge tests submit deliberately mangled text — word salad, an injection
+    attempt — and need it to REACH `llm_gate`. On a budgeted level it never
+    gets there: the mangling costs far more than the budget and the pipeline
+    stops at `edit_budget`, which is correct behaviour and useless for testing
+    the judge. Picked by inspecting the rulesets rather than hardcoded, so
+    re-ordering the campaign cannot silently point these tests at a level that
+    short-circuits.
+    """
+    for entry in content.campaign:
+        resolved = content.resolve(entry.n)
+        assert resolved is not None
+        if not any(spec.check == "edit_budget" for spec in resolved[1].checks):
+            return entry
+    raise AssertionError(
+        "every campaign level runs an edit_budget; the judge tests need one that does not"
+    )
+
+
+@pytest.fixture
+def unbudgeted_passage_id(unbudgeted_level: CampaignLevel) -> str:
+    return unbudgeted_level.passage_id
+
+
+@pytest.fixture
+def unbudgeted_passage(content: Content, unbudgeted_passage_id: str) -> PassagePublic:
+    bundle = content.passage(unbudgeted_passage_id)
+    assert bundle is not None
+    return bundle.public
 
 
 @pytest.fixture

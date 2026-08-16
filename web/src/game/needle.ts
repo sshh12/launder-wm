@@ -15,9 +15,17 @@
  * Threshold crossing is ONE moment: the notch fills, one 220ms hairline sweep,
  * one short chime, once — with 2%-of-scale hysteresis before it can re-arm, or
  * a value bouncing across the line re-fires it on every keystroke.
+ *
+ * THE WINDOW (`detector_floor`). Two levels give the scale a bottom as well as
+ * a top: a reading far below the null is its own evidence, so the player has to
+ * LAND between the floor and the notch rather than scrub as far left as they
+ * can. Those levels get one extra printed mark and the shaded window it opens.
+ * The floor is drawn in a different vocabulary from the notch on purpose — they
+ * bound the same window but they do not mean the same thing, and two identical
+ * ticks would read as a pair.
  */
 
-import type { Copy } from "../state";
+import { readBoot, type CheckSpecWire, type Copy } from "../state";
 
 export interface NeedleElements {
   meter: HTMLElement;
@@ -39,6 +47,16 @@ export interface NeedleConfig {
   zStar: number;
   scale: { min: number; max: number };
   copy: Copy;
+  /**
+   * The bottom of the window, IN z, or null on the levels that have no floor.
+   *
+   * Optional because the needle can find it for itself: it is a function of the
+   * level's own `detector_floor` params and `z_star`, both of which the boot
+   * payload already inlined into the page this instrument is painted on. A
+   * caller that has the payload in hand is welcome to pass it and skip the
+   * lookup — the two paths cannot disagree, because they read the same field.
+   */
+  floorZ?: number | null;
 }
 
 export const POINTS_MIN = 0;
@@ -83,6 +101,60 @@ export function points(z: number, cfg: PointsScale): number {
   return p;
 }
 
+/** The wire name of the rule that gives the scale a bottom. A check name, not a
+ *  player-facing string: it is the same token levels.toml and the gate's trace
+ *  use, and the words the player reads for it live in copy.toml under
+ *  `check.detector_floor` (§10.7). */
+const FLOOR_CHECK = "detector_floor";
+
+/**
+ * The floor in z, or null when this level does not run the check.
+ *
+ * `min_z` is RELATIVE TO THE NOTCH, exactly like `detector_threshold`'s
+ * `max_z`: the shipped -1.2 means "no further below z* than 1.2", not "no lower
+ * than -1.2". Reading it as an absolute would put the mark at 8 on a face whose
+ * notch is 36 — a floor above the line, which is not a window at all.
+ */
+export function floorZFromChecks(
+  checks: readonly CheckSpecWire[] | undefined,
+  zStar: number,
+): number | null {
+  const spec = checks?.find((c) => c.check === FLOOR_CHECK);
+  const min = spec?.params?.["min_z"];
+  // A check present but carrying no usable `min_z` draws NO mark. An invented
+  // default would be a line the player can fail against that the server never
+  // agreed to.
+  if (typeof min !== "number" || !Number.isFinite(min)) return null;
+  return zStar + min;
+}
+
+/** This level's checks, from the payload the server inlined. Absent or
+ *  malformed is "no floor", never a thrown error: the instrument's job is to
+ *  keep reading. */
+function checksInPage(doc: Document): CheckSpecWire[] {
+  try {
+    return readBoot(doc).level.checks ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The floor this instrument will draw AND speak, or null — ONE decision, made
+ * once.
+ *
+ * A floor that does not open a window on the printed scale is not a floor, and
+ * the guard belongs here rather than in the drawing: deciding it separately for
+ * the mark and for the spoken value is exactly how a face that shows no bottom
+ * ends up announcing one. Nothing in the shipped levels is degenerate; a params
+ * typo that put `min_z` the right way up would be.
+ */
+function usableFloor(cfg: NeedleConfig, doc: Document): number | null {
+  const z = cfg.floorZ ?? floorZFromChecks(checksInPage(doc), cfg.zStar);
+  if (z === null) return null;
+  return points(z, cfg) < points(cfg.zStar, cfg) ? z : null;
+}
+
 /** Never rendered with a `%` and never called a percentage: [readout]'s
  *  standing rule is that the product shows no "% AI" figure, and a bare 0-100
  *  number wearing a percent sign would read as exactly that. */
@@ -106,11 +178,14 @@ export class Needle {
   private queued: number | null = null;
   private audio: AudioContext | null = null;
   private soundOn = true;
+  /** the bottom of the window in z, or null on a level with no floor */
+  private readonly floorZ: number | null;
   onCross: ((below: boolean) => void) | null = null;
 
   constructor(els: NeedleElements, cfg: NeedleConfig, initialZ: number) {
     this.els = els;
     this.cfg = cfg;
+    this.floorZ = usableFloor(cfg, els.meter.ownerDocument);
     this.value = initialZ;
     this.last = initialZ;
     this.peak = initialZ;
@@ -125,6 +200,7 @@ export class Needle {
     els.meter.setAttribute("aria-valuemin", String(POINTS_MIN));
     els.meter.setAttribute("aria-valuemax", String(POINTS_MAX));
     this.buildScale();
+    this.buildWindow();
     this.measure();
     // The server positions the needle with `--init-x` (a percentage of the
     // face) so the instrument is correct before this file runs. From here the
@@ -180,11 +256,60 @@ export class Needle {
       }
       this.els.scaleRow.appendChild(s);
     }
-    const at = `${this.pct(this.cfg.zStar)}%`;
+    const at = `${this.markPct(this.cfg.zStar)}%`;
     this.els.notch.style.left = at;
     this.els.tri.style.left = at;
     this.els.floorLabel.style.left = at;
     this.els.floorLabel.style.transform = "translateX(-50%)";
+  }
+
+  /**
+   * Where a PRINTED LIMIT sits, as a percentage of the face.
+   *
+   * `points()`, not `pct()`, and the difference is the whole reason the two
+   * functions are not one. `pct()` is the continuous position of a reading; the
+   * needle uses it because a needle is a reading. A printed limit is a NUMBER
+   * the instrument also prints in words — "Under 36 to clear" — and it has to
+   * stand at the place that number names, or the label and the mark disagree by
+   * the exact amount `points()` corrects. z* is 36.05 raw and 36 printed; the
+   * shipped floor is 26.05 raw and 26 printed.
+   */
+  private markPct(z: number): number {
+    return points(z, this.cfg);
+  }
+
+  /**
+   * The window: one mark for the floor and the shaded band it opens up to the
+   * notch. Built here rather than checked into index.html for the reason the 21
+   * ticks are — the instrument draws its own face — and drawn AT ALL only on
+   * the levels that run the check, so a level with no floor has no element to
+   * mistake for one.
+   *
+   * Inserted BEFORE the notch, which puts the band over the moving wash and
+   * under every mark that moves. Over the wash because a window that vanished
+   * where the fill covers it would appear to start at the needle; under the
+   * needle because the needle is what the player is asked to move and nothing
+   * here may compete with it.
+   */
+  private buildWindow(): void {
+    const floor = this.floorZ;
+    if (floor === null) return;
+    // `usableFloor` has already refused a floor that opens no window, so these
+    // two are in order and the band has width.
+    const from = this.markPct(floor);
+    const to = this.markPct(this.cfg.zStar);
+    const doc = this.els.meter.ownerDocument;
+    const band = doc.createElement("div");
+    band.className = "band";
+    band.id = "band";
+    band.style.left = `${from}%`;
+    band.style.width = `${to - from}%`;
+    const mark = doc.createElement("div");
+    mark.className = "floormark";
+    mark.id = "floormark";
+    mark.style.left = `${from}%`;
+    this.els.face.insertBefore(band, this.els.notch);
+    this.els.face.insertBefore(mark, this.els.notch);
   }
 
   private measure(): void {
@@ -305,11 +430,30 @@ export class Needle {
     this.els.tri.setAttribute("data-below", flag);
     this.els.floorLabel.setAttribute("data-below", flag);
     this.els.meter.setAttribute("aria-valuenow", display);
+    // The floor is a mark on the face, and a mark on the face is no use to
+    // anyone reading this instrument through a screen reader. The spoken value
+    // carries it instead — the ONE place it can go without inventing a visual
+    // cue that only some players get.
+    //
+    // The floor's own sentence REPLACES the line's rather than joining it. Both
+    // are true down here — a floor that did not sit under the notch was refused
+    // as a floor — but only one of them is the thing standing between the
+    // player and the clear, and "26, below the line. Too clean. The needle
+    // reads 26..." says the number twice to say less.
+    const floor = this.floorZ;
+    // `z < floor`, matching the gate's "at or above": the floor is IN the
+    // window. The bound the player is told and the bound they are judged
+    // against have to be the same bound.
     this.els.meter.setAttribute(
       "aria-valuetext",
-      copy.t(below ? "readout.valuetext_below" : "readout.valuetext_above", {
-        z_display: display,
-      }),
+      floor !== null && z < floor
+        ? copy.t(`check.${FLOOR_CHECK}.reject`, {
+            z_display: display,
+            z_floor_display: formatPoints(floor, this.cfg),
+          })
+        : copy.t(below ? "readout.valuetext_below" : "readout.valuetext_above", {
+            z_display: display,
+          }),
     );
   }
 

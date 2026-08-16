@@ -6,10 +6,12 @@
   }
 
   /* ---- cleared ---------------------------------------------------------- */
+  /* The two-state instrument agrees with itself; the needle stays ink, and so
+     does the notch — a printed limit that restyled itself was the same mark
+     hiding inside the same colour as the fill, in both states. What changes on
+     a clear is everything that MOVES: the wash, the pointer and the label. */
   .page[data-cleared="1"] .fill,
-  .page[data-cleared="1"] .notch,
   .page[data-cleared="1"] .tri {
-    /* the two-state instrument agrees with itself; the needle stays ink */
     background-color: var(--cold);
   }
   .page[data-cleared="1"] .tri {
@@ -49,8 +51,14 @@
   .page[data-typing="1"] .gutrow {
     height: 6px;
   }
+  /* The campaign position folds while the keyboard is up and the ruleset's
+     NAME does not: "level 5 of 15" is progress, and progress is not what you
+     consult mid-edit — the name is the shorthand for the rules you are editing
+     against. Folding it also buys back the line the readout wraps onto, so the
+     typing rail is no taller than it was before the head learned to wrap. */
   .page[data-typing="1"] .floorlbl,
   .page[data-typing="1"] .scalerow,
+  .page[data-typing="1"] .levelno,
   .page[data-typing="1"] .whatbtn,
   .page[data-typing="1"] .notice {
     display: none;
@@ -61,6 +69,12 @@
     :root {
       --gut: 24px;
     }
+    /* The instrument is held to the passage's own measure from here up, so it
+       reads as the scale ACROSS THE TOP OF THAT BOX rather than as a bar that
+       happens to share a page with it. `ch` resolves against the same 13px
+       mono on the rail as on .passage, so the two edges line up exactly. */
+    .railhead,
+    .meter,
     .passage,
     .actions,
     .status,
@@ -105,6 +119,9 @@
     .page[data-typing="1"] .floorlbl,
     .page[data-typing="1"] .whatbtn {
       display: block;
+    }
+    .page[data-typing="1"] .levelno {
+      display: inline;
     }
     .page[data-typing="1"] .gutrow {
       height: 13px;

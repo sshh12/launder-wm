@@ -20,24 +20,24 @@
       "blake3": "blake3:73d6c230726960a928055d1e85dd1b0f7856679669fcf1be1d63de259f7832ff"
     },
     "data/config/copy.toml": {
-      "bytes": 16936,
-      "blake3": "blake3:ac57d3c400cfe76978df9cb4fd8a78c7595cbfa6fba004fd3411eb9345c67e74"
+      "bytes": 17951,
+      "blake3": "blake3:46828d007f691617c3f3cec769b3076bb8d327366cb96b64cf49adf19584f840"
     },
     "data/config/judge.toml": {
-      "bytes": 9814,
-      "blake3": "blake3:f94a609ad2ce0c4aa555486018267ad4c5e324f6a62471329d02d99180fc0df9"
+      "bytes": 9634,
+      "blake3": "blake3:7935db5d037a792cf13e2ab7e6c4f998ca1268fe9f3d2a4045a531c173d07c9a"
     },
     "data/config/lemma.v1.tsv": {
       "bytes": 2148,
       "blake3": "blake3:885b7649d4d7b3c02143a02def1b87b4f8e45716bfceb4a357f1d4b43936fa58"
     },
     "data/config/levels.toml": {
-      "bytes": 5160,
-      "blake3": "blake3:b4d7f77dd3c217d99c0ecb58bbf0666f4b0177d29e640f9418a15e0f5878a039"
+      "bytes": 9766,
+      "blake3": "blake3:9fa2ae3cb9972ba2c650f4b69821a9047b9c310e619a0e31c3823fe5e005653d"
     },
     "data/config/progression.toml": {
-      "bytes": 3506,
-      "blake3": "blake3:2dd62c07ad9afce6449db8360c9c69164ba24303f1a42ef63b958625ef1315f5"
+      "bytes": 5217,
+      "blake3": "blake3:dea213c044c8b2bad151308caa3625e95085c23f88150ee4a865b090024f2083"
     },
     "data/config/prompts/high_entropy.yaml": {
       "bytes": 2841,
@@ -88,8 +88,8 @@
       "blake3": "blake3:99045897afe7bded9d6dd2eb3b4a0aeda3c7bae92503718a496a7c602492e7e6"
     },
     "data/passages/p01.public.json": {
-      "bytes": 4307,
-      "blake3": "blake3:8359f52961366701e7b4288723b50cb73b750ee28b16200b4a8d6caa3464b336"
+      "bytes": 5018,
+      "blake3": "blake3:9f4c0917a7f553d3f3d9341021d8c34933ef691ad3beaecec9a062b7c6666f86"
     },
     "data/passages/p01.server.json": {
       "bytes": 2049,
@@ -221,7 +221,7 @@
     },
     "data/passages/p12.public.json": {
       "bytes": 4214,
-      "blake3": "blake3:9cb07debb3c369727386fd489edf2474160099f49129eb6c307ef16682a8dc53"
+      "blake3": "blake3:5a44501cb38989e2c58a5be40016e829422f4ad828036a3e2502c29a77514d1d"
     },
     "data/passages/p12.server.json": {
       "bytes": 1884,
@@ -232,8 +232,8 @@
       "blake3": "blake3:0dea03951bbc24a0b332e517c2653cdccfc53d898eb391ea620008be08180dc1"
     },
     "data/passages/p13.public.json": {
-      "bytes": 4391,
-      "blake3": "blake3:a65d4d93094343adbf8d2b5ffd5eca79c6352e41db39662019d48f182be4a27f"
+      "bytes": 4374,
+      "blake3": "blake3:d80fedf2433a9b078230d7f6a4e66f5b4f51690139cd810433796de661331b93"
     },
     "data/passages/p13.server.json": {
       "bytes": 1904,
@@ -244,8 +244,8 @@
       "blake3": "blake3:7509c81c7e2a05968f6041c007160dfdb2784f4960a3903412db999d0fa5c761"
     },
     "data/passages/p14.public.json": {
-      "bytes": 4032,
-      "blake3": "blake3:bb2f4fdc69a14904cb79fc6d5459d06638dd3beb5e3efa850298130c799f478f"
+      "bytes": 4117,
+      "blake3": "blake3:5fc85c21f304599b3f301f615f17d0e0fed03ecabff4bdab87c42f8588a352f2"
     },
     "data/passages/p14.server.json": {
       "bytes": 1859,
@@ -285,7 +285,7 @@
     }
   },
   "env": {
-    "checked_at": "2026-08-16T06:12:59+00:00",
+    "checked_at": "2026-08-16T20:09:56+00:00",
     "python": "3.12.14",
     "platform": "Windows 11 (AMD64)",
     "torch": "2.13.0+cpu",

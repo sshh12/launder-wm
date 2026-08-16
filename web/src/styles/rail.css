@@ -41,10 +41,25 @@
     background: var(--hot);
   }
 
+  /* TWO REGISTERS: where the player is (level, ?, the ruleset's name) and what
+     the instrument reads. The row WRAPS between them instead of truncating
+     either — on a phone the reading takes the second line, directly above the
+     scale it is a reading of.
+
+     It used to be one nowrap row in which every item was `flex: none` EXCEPT
+     the ruleset name, which carried `min-width: 0; overflow: hidden;
+     text-overflow: ellipsis`. That made the name the only thing in the row
+     able to absorb overflow, so when the readout grew from "AI detected" to
+     "AI watermark detected" the row stopped fitting and "Clean it" rendered as
+     "C…" at 390px and as nothing at all at 320px. A level whose name the
+     player cannot read is a level whose rules they cannot anticipate, so
+     NOTHING IN THIS ROW ELLIPSISES. It takes another line. */
   .railhead {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--sp-2);
+    column-gap: var(--sp-2);
+    row-gap: 3px;
     margin-bottom: 7px;
   }
   /* "Level 3 of 15" — the position in the campaign, always with its total, so
@@ -55,21 +70,26 @@
     color: var(--ink-2);
     flex: none;
   }
+  /* The ruleset's name, and the only item allowed to GROW: filling the slack
+     is what keeps the reading hard right while the two registers share a line,
+     and what puts it hard left the moment it wraps to its own. */
   .lvlchip {
+    flex: 1 1 auto;
     font-size: 11px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--ink);
+    /* A name too long for a line of its own wraps. It does not clip, and it
+       does not push the rail off the side of the phone either. */
+    overflow-wrap: anywhere;
+  }
+  /* The rule sits under the NAME, not under the slack the chip grew into. */
+  .lvlname {
     border-bottom: 1px solid var(--rule);
     padding-bottom: 2px;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .readout {
-    margin-left: auto;
     display: flex;
     align-items: baseline;
     gap: 7px;
@@ -102,10 +122,17 @@
 
   /* The meter is a printed linear scale, not a dial: at 360px a galvanometer's
      numerals render at ~4.3px and its threshold mark at one device pixel
-     (§10.6). 21 hairline ticks at 5%, hard two-state fill, and the one and only
-     drop shadow in the app is on the needle. */
+     (§10.6). 21 hairline ticks at 5%, a two-state wash, and the one and only
+     drop shadow in the app is on the needle.
+
+     READ-ONLY, AND IT HAS TO LOOK IT. role="meter" takes no input, so the
+     instrument offers no grip: no pointer cursor, no text to drag out of the
+     numerals, and — below — no track and no thumb. */
   .meter {
     position: relative;
+    cursor: default;
+    -webkit-user-select: none;
+    user-select: none;
   }
   .face {
     position: relative;
@@ -127,21 +154,29 @@
   .tick[data-maj="0"] {
     height: 5px;
   }
-  .track {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 9px;
-    height: 1px;
-    background: var(--rule);
-  }
+  /* The reading, as the SHADED REGION of the scale it covers — not as a filled
+     track. A 9px bar pinned to the bottom edge with a hairline rail above it
+     and a pointed marker sitting on top of it is the drawing of an <input
+     type=range>, which is the one thing this element is not: it takes no input
+     at all. A band that hangs off the tick scale and runs to the floor of the
+     face is a shaded sector instead, and its leading edge is the needle —
+     which is the thing the player is actually asked to move.
+
+     It starts at 12px so it clears the 10px major ticks entirely: the ticks
+     ARE the scale (§10.6) and a wash over them costs --rule a third of its
+     contrast on exactly the half of the face the reading covers.
+
+     opacity, not a colour with baked-in alpha, because state.css flips
+     `background-color` on [data-cleared] and an alpha channel declared here
+     would be dropped there without a word. */
   .fill {
     position: absolute;
     left: 0;
+    top: 12px;
     bottom: 0;
-    height: 9px;
     width: 100%;
     background: var(--hot);
+    opacity: 0.34;
     /* --init-n is written server-side so the bar is correct before any JS. */
     transform: scaleX(var(--init-n, 0));
     transform-origin: left center;
@@ -153,16 +188,77 @@
   .fill[data-below="1"] {
     background: var(--cold);
   }
+  /* The clear-threshold: a PRINTED LIMIT on the face, in ink, dashed — the one
+     mark on this instrument that never moves while the level is being played
+     and never restyles itself, drawn in the one vocabulary the moving parts do
+     not use. That is also why state.css no longer recolours it. It was --hot
+     standing inside a --hot fill, so the single mark that defines winning was
+     camouflaged against the bar that sweeps over it. Dashes rather than a
+     second solid hairline, because the solid one is the needle. */
   .notch {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 2px;
-    background: var(--hot);
+    width: 0;
+    border-left: 2px dashed var(--ink);
     margin-left: -1px;
+    /* A hairline of the face's own ground each side, so the mark separates
+       from the wash it stands in. The top and bottom edges of the outline fall
+       outside the face and are clipped by its overflow. */
+    outline: 1px solid var(--panel);
   }
-  .notch[data-below="1"] {
-    background: var(--cold);
+  /* THE WINDOW, on the two levels that run `detector_floor`. Between the floor
+     and the notch is where the reading has to LAND, so the target is drawn as a
+     PLACE rather than left as the gap between two marks — "land in here" is the
+     whole twist of those levels and it should not have to be inferred.
+
+     A faint ink wash, printed OVER the moving one: under it, the window would
+     disappear wherever the reading covers it and appear to start at the needle.
+     It is subordinate to everything that moves — no edge of its own, no colour
+     of its own, and no state: it is the one region of the face that looks the
+     same before the player types and after. Both elements are created by
+     needle.ts and only on the levels that run the check, so a level with no
+     floor has nothing here to mistake for one. */
+  .band {
+    position: absolute;
+    /* THE FULL HEIGHT OF THE FACE, not the 12px wash shelf. On the shelf it was
+       a second rectangle the same height as the reading's own bar and sitting on
+       the same line as it — two bars, one of which happened not to move. Run to
+       the top and it becomes a REGION OF THE SCALE instead: the ticks print
+       over it, which is the whole claim being made — this stretch of the ruler
+       is the one to land on. */
+    top: 0;
+    bottom: 0;
+    background: var(--ink);
+    opacity: 0.11;
+    pointer-events: none;
+  }
+  /* THE FLOOR. Not a second notch, and deliberately not drawn like one: the two
+     bound the same window but they do not mean the same thing — the notch is
+     the line you have to get under, the floor is the point past which getting
+     cleaner starts reading as scrubbed. Two matching ticks would say they were
+     a pair of the same thing.
+
+     So the floor is a BRACKET: a solid hairline with two short serifs turning
+     into the window, standing on the same 12px wash shelf as the reading and
+     clear of the ticks, where the notch runs the full face. Solid where the
+     notch is dashed, short where the notch is tall, and pointing INTO the band
+     rather than standing on its own. The left border IS the floor — the serifs
+     hang off it to the right, so the mark lands on the number the scale prints
+     and not half a mark past it.
+
+     NOT `.floorlbl`, three rules down, which is the THRESHOLD's gutter label
+     and has nothing to do with this — it carries "Under 36 to clear" and is
+     named for a word §10.7 reserves for the length minimum. The two live in the
+     same file and mean different things; this one is the detector's bottom. */
+  .floormark {
+    position: absolute;
+    top: 12px;
+    bottom: 0;
+    width: 5px;
+    border: 1px solid var(--ink);
+    border-right: 0;
+    pointer-events: none;
   }
   .peak {
     position: absolute;
@@ -201,13 +297,17 @@
     transition-duration: 380ms;
     transition-timing-function: cubic-bezier(0.34, 1.36, 0.64, 1);
   }
-  /* The index mark rides the TOP of the face so nothing is clipped and it never
-     collides with the 9px fill bar. */
+  /* The index mark rides the BOTTOM of the face and points DOWN, out of the
+     instrument and at the passage — which is what the instrument is reading.
+     It sat on the top edge, above a filled track, where a marker on a rail is
+     the universal drawing of a thing you drag. Nothing is clipped down here
+     now: the 9px bar the top mark was avoiding is a wash, and the ticks the
+     bottom edge would have collided with hang off the top. */
   .needle::after {
     content: "";
     position: absolute;
     left: -4px;
-    top: 0;
+    bottom: 0;
     border-left: 4.5px solid transparent;
     border-right: 4.5px solid transparent;
     border-top: 7px solid var(--ink);
@@ -224,10 +324,25 @@
     pointer-events: none;
   }
 
+  /* ORDER: face, then the threshold's own gutter, then the printed numerals.
+     The pointer and "Under 36 to clear" name the notch, so they hang directly
+     off it — with the 0..100 row in between they were a whole register away
+     from the mark they refer to, and read as a caption for the scale. */
+  .gutrow {
+    position: relative;
+    height: 18px;
+  }
+  .tri {
+    position: absolute;
+    top: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid var(--hot);
+    margin-left: -4px;
+  }
   .scalerow {
     position: relative;
     height: 14px;
-    margin-top: 3px;
   }
   .scalerow span {
     position: absolute;
@@ -236,18 +351,6 @@
     letter-spacing: 0.06em;
     color: var(--ink-2);
   }
-  .gutrow {
-    position: relative;
-    height: 13px;
-  }
-  .tri {
-    position: absolute;
-    top: -3px;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 5px solid var(--hot);
-    margin-left: -4px;
-  }
   .tri[data-below="1"] {
     border-bottom-color: var(--cold);
   }
@@ -255,7 +358,7 @@
      meaning (§10.7). The string is copy.readout.threshold_label. */
   .floorlbl {
     position: absolute;
-    top: 1px;
+    top: 5px;
     font-size: 10px;
     letter-spacing: 0.14em;
     text-transform: uppercase;

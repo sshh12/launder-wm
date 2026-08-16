@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -46,6 +45,15 @@ from pathlib import Path
 from typing import Any
 
 from launder_core.gates.feedback import CopyBook
+from launder_core.readout import (
+    POINTS_MAX,
+    POINTS_MIN,
+    SCALE_MAX,
+    SCALE_MIN,
+    format_points,
+    pct,
+    points,
+)
 from launder_core.schemas import LevelConfig, PassagePublic
 from launder_serve.content import Content, PassageBundle
 from launder_serve.engine import ServerDetector, text_hash
@@ -73,8 +81,6 @@ TEXT_CLOSE = "<!-- /LAUNDER:TEXT -->"
 
 #: The INTERNAL scale of the instrument, in z (§10.5). Geometry, thresholds, the
 #: wire and the DB are all still z; only the printed number is points.
-SCALE_MIN = -2.0
-SCALE_MAX = 10.0
 
 #: The DISPLAYED scale (§11). z is a statistic nobody can place and -2..10 reads
 #: as broken, so the readout is a monotone relabelling of z onto 0..100.
@@ -85,8 +91,6 @@ SCALE_MAX = 10.0
 #: standing rule for `[readout]` is that the product never shows a "% AI"
 #: figure, and a number that looks like one would break it. This is the
 #: "Watermark evidence" meter, not a probability.
-POINTS_MIN = 0
-POINTS_MAX = 100
 
 #: `data/assets` filenames the browser needs for the LOCAL detector. Absent
 #: files mean `assets: null`, which is M2 — the server-detect game, complete and
@@ -309,47 +313,6 @@ def _sub_once(
     return out
 
 
-def _pct(z: float) -> float:
-    """0..100 along the printed scale. The exact arithmetic of `Needle.pct`."""
-    span = SCALE_MAX - SCALE_MIN or 1.0
-    return max(0.0, min(100.0, ((z - SCALE_MIN) / span) * 100.0))
-
-
-def _round_half_up(value: float) -> int:
-    """`Math.round`, not Python's `round`.
-
-    Python rounds halves to EVEN and JavaScript rounds them UP, so a z landing
-    exactly on x.5 points would print 36 here and 37 in `needle.ts` — the
-    server-rendered first paint disagreeing with the first client repaint by
-    one, on one passage in a hundred, which is the hardest kind of disagreement
-    to ever notice.
-    """
-    return math.floor(value + 0.5)
-
-
-def points(z: float, z_star: float) -> int:
-    """z relabelled onto 0..100 for display (§11). A monotone map, not a probability.
-
-    The side of the line WINS OVER THE ROUNDING. Rounding can put a z that is
-    above the notch onto the same integer as the notch itself, which is exactly
-    the "2.3 on both sides" bug that the two-decimal z display was introduced to
-    avoid — and a readout that disagrees with the verdict is the one
-    disagreement this game cannot survive.
-    """
-    p_star = _round_half_up(_pct(z_star))
-    p = max(POINTS_MIN, min(POINTS_MAX, _round_half_up(_pct(z))))
-    if z > z_star and p <= p_star:
-        p = min(p_star + 1, POINTS_MAX)
-    if z <= z_star and p > p_star:
-        p = p_star
-    return p
-
-
-def format_points(z: float, z_star: float) -> str:
-    """The readout's text. A whole number, never a decimal and never a `%`."""
-    return str(points(z, z_star))
-
-
 def render_index(
     template: str,
     *,
@@ -363,7 +326,7 @@ def render_index(
     # The GEOMETRY is still z: `--init-x`/`--init-n` are the needle's position
     # along the -2..10 scale and are already percentages. Only the printed
     # number is points.
-    pct = _pct(expected_z)
+    face_pct = pct(expected_z)
     readout = format_points(expected_z, z_star)
 
     html = _replace_region(
@@ -390,7 +353,9 @@ def render_index(
     html = _sub_once(
         html,
         r'(<div class="face" id="face" style=")[^"]*(")',
-        lambda m: f"{m.group(1)}--init-x: {pct:.4f}%; --init-n: {pct / 100.0:.4f}{m.group(2)}",
+        lambda m: (
+            f"{m.group(1)}--init-x: {face_pct:.4f}%; --init-n: {face_pct / 100.0:.4f}{m.group(2)}"
+        ),
         "#face --init-x/--init-n",
     )
     below_attr = ' data-below="1"' if below else ""

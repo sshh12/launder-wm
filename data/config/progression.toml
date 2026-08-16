@@ -1,120 +1,115 @@
-# data/config/progression.toml
+# data/config/progression.toml — the campaign, in order.
 #
-# THE CAMPAIGN: level number -> passage -> ruleset. This file replaced
-# schedule.toml when the game stopped being a daily. There is no date here, no
-# rollover, no puzzle number and no epoch: level 1 is the same passage for
-# everyone, forever, and a player advances by clearing it. Everything that was
-# once "which puzzle is today" is now "which level have you reached", which the
-# client carries in a cookie and the server records per session.
+# The game is a linear campaign, not a daily. There is no date arithmetic here,
+# nothing rolls over at midnight, and the only ordering is `n`. Clear a level and
+# you advance to the next; `?level=N` renders any level without touching
+# progress, which is how the author tests it.
 #
-# `n` is what the PLAYER sees ("Level 3 of 15"). `rules` is a `levels.toml` id
-# and is internal + wire only — the string "L1" is never rendered. Keeping the
-# two apart is what lets the campaign reorder or grow without renaming a
-# ruleset, and lets four different levels share one ruleset without pretending
-# they are the same level.
+# WHY EIGHT AND NOT FIFTEEN. The campaign was fifteen levels drawn from four
+# rulesets, and it was measured: on every one of them the only checks that ever
+# decided an outcome were the detector threshold and the judge. The budgets
+# (12 and 18) were two to six times what a greedy delete-the-hottest-word attack
+# actually spent, `close_paraphrase` is satisfied trivially by a two-word edit,
+# and both locked phrases sat in text the detector barely scores. Fifteen levels,
+# one puzzle. Eight levels that each add a pressure the player can name is a
+# better game than fifteen that do not.
+#
+# EVERY LEVEL BELOW ADDS EXACTLY ONE THING:
+#   1  the loop and the ripple                    (free play, gentlest passage)
+#   2  more text means more evidence              (free play, the z 7.33 wall)
+#   3  count your edits                           (a budget that actually binds)
+#   4  you may only edit the opening              (the ripple runs one way)
+#   5  quote your source verbatim                 (and the quote is hot)
+#   6  you cannot just say something else         (every claim survives)
+#   7  too clean is also a tell                   (a window, not a direction)
+#   8  everything at once, two words              (the finale)
+#
+# `overrides` merges over the ruleset's own params, because a budget is only a
+# constraint when it is tuned to ITS passage — one number on a shared ruleset is
+# no constraint at all on the easiest passage that uses it. Each number below is
+# set from a VERIFIED solution for that passage, and set below what the greedy
+# attack needs on it, so the bound admits skilled play and excludes the script.
 
 schema = "launder.progression/1"
 
-# A level whose passage file is missing is a BOOT FAILURE. There is no
-# "skip the day" behaviour any more; a hole in the campaign is a broken build.
+# A level whose passage file is missing, or whose `rules` id levels.toml does not
+# define, is a BOOT FAILURE. A hole in a linear campaign is not a day to skip; it
+# dead-ends the player halfway through.
 strict = true
 
-# --- the campaign ------------------------------------------------------------
-# `n` must be 1..15 contiguous with no gaps and no repeats: the client computes
-# `unlocked = min(max(cleared) + 1, level_count)` and a gap would strand every
-# player at the hole.
-#
-# ORDER IS DIFFICULTY, and difficulty here is two things at once: the ruleset
-# ladder L1 -> L2 -> L3 -> L4 (each adds a constraint), and within each ruleset
-# group, ascending detector z — a passage that starts further above the line
-# needs more edits before the needle drops under it. L5 (code) and L6
-# (regenerate locally) are deliberately NOT in the campaign: L5 has no unit-test
-# passage authored and is dropped at boot as unserviceable, and L6 has no
-# passage at all.
+# --- act one: learn the instrument ------------------------------------------
 
+# The gentlest passage in the set (z 3.95, a verified two-edit clear). Nothing to
+# obey but the line itself, so the heat mirror and the rightward ripple are the
+# only things to notice — which is the point.
 [[level]]
 n          = 1
 passage_id = "p01"
 rules      = "L1"
 
+# The same rules against the highest reading in the campaign (z 7.33). Same
+# instrument, four times the evidence to remove: this is where "longer text
+# carries more evidence" stops being a sentence and becomes an experience. The
+# word floor is what stops the obvious answer of deleting the essay.
 [[level]]
 n          = 2
-passage_id = "p02"
+passage_id = "p11"
 rules      = "L1"
 
+# --- act two: one constraint each -------------------------------------------
+
+# The first binding budget. Greedy deletion needs 7 edits on this passage and the
+# best verified solution is 6, so a budget of 6 admits the answer and excludes
+# the brute force. Placement starts to matter here and nowhere earlier.
 [[level]]
 n          = 3
-passage_id = "p03"
-rules      = "L1"
-
-[[level]]
-n          = 4
-passage_id = "p04"
-rules      = "L1"
-
-# Was the passage schedule.toml's `[intro]` block reserved for the tutorial. It
-# never got the baked prefix-z the intro slider needs — its `intro` field is
-# null, like every other passage — so it is an ordinary L1 level here rather
-# than a special case that does nothing.
-[[level]]
-n          = 5
-passage_id = "p05"
-rules      = "L1"
-
-[[level]]
-n          = 6
-passage_id = "p06"
-rules      = "L1"
-
-[[level]]
-n          = 7
-passage_id = "p07"
-rules      = "L1"
-
-# L2 arrives: the edit budget. Triage derived it from par_upper + 2, so the
-# budget is loose enough that a competent first attempt fits inside it.
-[[level]]
-n          = 8
-passage_id = "p08"
-rules      = "L2"
-
-[[level]]
-n          = 9
-passage_id = "p09"
-rules      = "L2"
-
-[[level]]
-n          = 10
 passage_id = "p10"
 rules      = "L2"
+overrides  = { edit_budget = { max_word_distance = 6 } }
 
+# Edits confined to the opening. Because context runs left to right, an edit
+# re-keys everything downstream of it and nothing upstream — so this constraint
+# is generous rather than cruel, and it is the only level that makes the player
+# find that out.
 [[level]]
-n          = 11
-passage_id = "p11"
-rules      = "L2"
+n          = 4
+passage_id = "p03"
+rules      = "L7"
 
-# L3 arrives: the locked phrase. Both L3 passages carry exactly one phrase in
-# `rules.locked_phrases`; an empty list would make the check vacuous and the
-# level indistinguishable from L2.
+# A phrase you must reproduce verbatim, chosen by its g-values rather than by how
+# quotable it reads: it sits in the hottest run in the passage, so the signal you
+# most want to disturb is the signal you are forbidden to touch. Budget tightened
+# from the ruleset's 18 to 8 against a verified 6-edit clear.
 [[level]]
-n          = 12
-passage_id = "p12"
-rules      = "L3"
-
-[[level]]
-n          = 13
+n          = 5
 passage_id = "p13"
 rules      = "L3"
+overrides  = { edit_budget = { max_word_distance = 8 } }
 
-# L4 closes the campaign: close_paraphrase plus `require_claims = "all"`, so
-# every authored claim is load-bearing and there is no room to rewrite around
-# the hot words.
+# The tight fence: every claim in the passage must survive, nothing may be added,
+# and the shape has to stay close to the original. Paraphrasing your way out —
+# the move that works on every earlier level — stops working here.
 [[level]]
-n          = 14
-passage_id = "p14"
-rules      = "L4"
-
-[[level]]
-n          = 15
+n          = 6
 passage_id = "p15"
 rules      = "L4"
+
+# --- act three: hard ---------------------------------------------------------
+
+# The reading must land in a window rather than merely under the line. Every
+# automated attack on this game is a hill climb that minimises z; a floor turns
+# that into a targeting problem and "delete until it goes quiet" stops being a
+# strategy. Uses the passage with the lowest starting reading, so the window is
+# narrow in edit terms.
+[[level]]
+n          = 7
+passage_id = "p12"
+rules      = "L8"
+
+# The finale. Locked phrase, tight fence, the two-sided window, every claim, and
+# two words to spend. A verified two-edit clear exists for this passage and the
+# greedy attack needs five, which is exactly what makes the budget honest.
+[[level]]
+n          = 8
+passage_id = "p14"
+rules      = "L9"
