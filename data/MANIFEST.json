@@ -20,8 +20,8 @@
       "blake3": "blake3:73d6c230726960a928055d1e85dd1b0f7856679669fcf1be1d63de259f7832ff"
     },
     "data/config/copy.toml": {
-      "bytes": 18203,
-      "blake3": "blake3:fe91f9f244caddd5a419363f09d384be2ea8e4449d9b8988976aeef1eee1fad0"
+      "bytes": 17924,
+      "blake3": "blake3:102a3314e971ef7f6ae9e973e3097e407b0599e7e795cd822ae98b4a3f8a031b"
     },
     "data/config/judge.toml": {
       "bytes": 10864,
@@ -32,8 +32,8 @@
       "blake3": "blake3:885b7649d4d7b3c02143a02def1b87b4f8e45716bfceb4a357f1d4b43936fa58"
     },
     "data/config/levels.toml": {
-      "bytes": 10899,
-      "blake3": "blake3:349404644132a9e302911f302a914232dc2c218e6f04a0e565550f4845fc1105"
+      "bytes": 10677,
+      "blake3": "blake3:3348454b39fac5a57be558d6774e27afbbd2a64100393498530208d5bb300e2e"
     },
     "data/config/progression.toml": {
       "bytes": 5217,
@@ -285,7 +285,7 @@
     }
   },
   "env": {
-    "checked_at": "2026-08-16T21:39:54+00:00",
+    "checked_at": "2026-08-16T22:36:39+00:00",
     "python": "3.12.14",
     "platform": "Windows 11 (AMD64)",
     "torch": "2.13.0+cpu",
