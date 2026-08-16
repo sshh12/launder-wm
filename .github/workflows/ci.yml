@@ -52,6 +52,22 @@ jobs:
           --health-retries 5
         ports: ["5432:5432"]
     env:
+      # THE TESTS MUST RUN IN THE VENV THE SYNC STEP BUILT.
+      #
+      # `uv run` syncs before it runs, to the extras named on ITS OWN command
+      # line — and not one `uv run` below names `--extra cpu`. So the step
+      # labelled "sync (CPU torch path)" installed `torch==2.13.0+cpu`, and the
+      # next `uv run` re-resolved the environment out from under it: `forge
+      # doctor` reported `2.13.0+cu130` during pytest, on a runner where the
+      # sync log says `+cpu` and not one `nvidia-*` wheel was installed.
+      #
+      # That is a step whose name promises something it does not deliver, and it
+      # went unseen because the whole job had been failing earlier, at Postgres
+      # service startup. `UV_NO_SYNC` is set at the JOB level rather than adding
+      # `--extra cpu` to eight commands: a flag has to be remembered on every
+      # future step, and this cannot be forgotten. `--locked` on the sync above
+      # is what keeps the venv honest.
+      UV_NO_SYNC: "1"
       # READ BY packages/serve/tests/test_repo_contract.py, which parametrizes
       # the repository contract over memory | sqlite | POSTGRES. It used to be
       # read by nothing but the `alembic upgrade head` step below, so the
@@ -80,6 +96,15 @@ jobs:
       # the CPU path explicitly.
       - name: sync (CPU torch path)
         run: uv sync --locked --extra cpu --dev
+
+      # The sync step's own assertion. `UV_NO_SYNC` above stops `uv run` from
+      # re-resolving the venv, and this proves it worked rather than trusting
+      # it: a `+cu130` wheel here means the CPU path silently stopped being the
+      # CPU path, which is a ~3 GB download and a `forge doctor` that describes
+      # a machine nobody is on.
+      - name: the venv is the one the sync step built
+        run: |
+          uv run python -c "import torch, sys; v = torch.__version__; print('torch', v, 'cuda build', torch.version.cuda); sys.exit(0 if v.endswith('+cpu') else 1)"
 
       - name: ruff
         run: |
