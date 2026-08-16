@@ -5,7 +5,9 @@ localizes:
 
 1. Every blake3 in `data/MANIFEST.json`, recomputed from the files.
 2. The sampling table's four digests against `[table]` in `watermark.toml`.
-3. `wm_config_id`, recomputed from `watermark.toml`'s six load-bearing fields.
+3. `wm_config_id`, recomputed from `watermark.toml`'s six load-bearing fields,
+   and every calibration bucket set `levels.toml` names against the ones
+   `thresholds.v1.json` actually defines.
 4. Every golden vector, recomputed from the assets (`launder_forge.vectors`).
 5. For every passage: `encode(text) == token_ids`, and a fresh derivation of
    `g_digest`, `expected_score`, `expected_z` and `expected_n_scored`.
@@ -34,13 +36,34 @@ from launder_forge.table import digests_of
 from launder_forge.tokenizer import load_tokenizer
 from launder_forge.vectors import verify_vectors
 
-__all__ = ["VerifyReport", "verify_all"]
+__all__ = ["NODE_PARITY_SCRIPTS", "TABLE_DIGEST_KEYS", "VerifyReport", "verify_all"]
 
-#: Candidate locations for the TS-side parity runner, most specific first.
-NODE_PARITY_SCRIPTS: tuple[str, ...] = (
-    "web/tools/parity.mjs",
-    "web/tools/verify-parity.mjs",
-    "web/tools/pack-check.mjs",
+#: Where the TS-side parity runner lives. ONE path, and it is not a search.
+#:
+#: THE BUG THIS LIST USED TO BE. It ended
+#: `("web/tools/parity.mjs", "web/tools/verify-parity.mjs", "web/tools/pack-check.mjs")`
+#: and took the first that existed. `verify-parity.mjs` has never existed, and
+#: `pack-check.mjs` is not a parity runner at all — it round-trips the packed
+#: tokenizer blob and never loads the detector, `data/golden/vectors.json` or a
+#: single passage. So renaming or deleting `parity.mjs` would have made
+#: `forge verify` run the tokenizer gate, see exit 0, and print
+#: `ts.parity  yes` — the one check that cannot be faked by sharing a Python
+#: implementation, passing by not running. A fallback that answers a different
+#: question is worse than no fallback: the missing runner is now a failure that
+#: names the file.
+NODE_PARITY_SCRIPTS: tuple[str, ...] = ("web/tools/parity.mjs",)
+
+#: Every value `[table]` in `watermark.toml` records about the sampling table,
+#: all of which `digests_of` recomputes. `ones` is in the list but is NOT a
+#: digest: a permutation of the table preserves it, so it cannot see a reversed
+#: bit order and only the four hashes can. It stays because it is the one value
+#: a human can eyeball, and it is checked because it is recorded.
+TABLE_DIGEST_KEYS: tuple[str, ...] = (
+    "ones",
+    "sha256_packed",
+    "sha256_unpacked",
+    "blake3_packed",
+    "blake3_unpacked",
 )
 
 
@@ -103,12 +126,23 @@ def verify_all(
 
     recorded = watermark_asset_digests(paths)
     recomputed = digests_of(table)
-    mismatched = [
-        f"{k}: {recomputed[k]} != {recorded[k]}"
-        for k in ("ones", "sha256_packed", "sha256_unpacked", "blake3_packed", "blake3_unpacked")
-        if k in recorded and str(recorded[k]) != str(recomputed[k])
+    # `if k in recorded` USED TO GUARD THIS COMPARISON, so a `[table]` block with
+    # its digests deleted compared nothing and still reported "4 digests match".
+    # The table is key material — every shipped passage was scored with it — and
+    # the whole point of the block is that a swapped file cannot be quiet. An
+    # ABSENT digest is now a failure, not a skip.
+    table_problems = [
+        f"{k}: not recorded in [table] of watermark.toml"
+        if k not in recorded
+        else f"{k}: {recomputed[k]} != {recorded[k]}"
+        for k in TABLE_DIGEST_KEYS
+        if k not in recorded or str(recorded[k]) != str(recomputed[k])
     ]
-    report.add("assets.sampling_table", not mismatched, "; ".join(mismatched) or "4 digests match")
+    report.add(
+        "assets.sampling_table",
+        not table_problems,
+        "; ".join(table_problems) or f"{len(TABLE_DIGEST_KEYS)} recorded values match",
+    )
 
     # --- 3. wm_config_id ---------------------------------------------------
     from launder_forge.config import load_toml
@@ -119,6 +153,9 @@ def verify_all(
         declared == cfg.wm_config_id,
         cfg.wm_config_id if declared == cfg.wm_config_id else f"{cfg.wm_config_id} != {declared}",
     )
+
+    # --- 3b. every calibration a level names exists ------------------------
+    report.add(*_check_calibrations(paths))
 
     # --- 4. golden vectors -------------------------------------------------
     if paths.vectors_json.exists():
@@ -140,6 +177,24 @@ def verify_all(
         report.add("passages", True, "no packed passages yet")
     else:
         tokenizer = load_tokenizer(paths)
+        # `expected_z` WAS THE ONE EXPECTATION THIS CHECK NEVER RECOMPUTED, while
+        # this module's own docstring listed it. It is not derivable from
+        # `score_ids` alone: `pack.py` writes the z the SHIPPED detector reports,
+        # i.e. the closed form times the measured kappa out of
+        # thresholds.v1.json, and forge's own `scored.z` is the closed form with
+        # kappa = 1. So a thresholds file recalibrated after a passage was packed
+        # left `expected_z` stale, and stale is not cosmetic: §4.5's runtime
+        # tripwire has the browser recompute the pristine passage, compare it to
+        # `expected_z`, and refuse local detection behind a banner when they
+        # disagree — on keystroke zero, in production, on every level. Same
+        # loader, same call, same number.
+        from launder_core.detect.calibration import load_thresholds
+
+        # THIS tree's thresholds, not the installed package's: `verify_all` is
+        # given a `Paths` so that it can be pointed at a scratch tree, and a
+        # check that silently reads the real repo's assets would report on a
+        # file the caller never handed it.
+        thresholds = load_thresholds(paths.thresholds if paths.thresholds.exists() else None)
         problems: list[str] = []
         for f in files:
             data = json.loads(f.read_text(encoding="utf-8"))
@@ -159,6 +214,13 @@ def verify_all(
                 )
             if abs(det["expected_score"] - scored.score) > 1e-12:
                 problems.append(f"{f.name}: score {scored.score!r} != {det['expected_score']!r}")
+            expected_z = thresholds.z(scored.score, scored.n_scored)
+            if abs(det["expected_z"] - expected_z) > 1e-9:
+                problems.append(
+                    f"{f.name}: z {expected_z!r} != packed {det['expected_z']!r} "
+                    "(the browser asserts this on load and hides the local detector when it "
+                    "disagrees; repack the passage with `forge pack --force`)"
+                )
             digest = g_digest(scored.g, scored.mask)
             if det["g_digest"] != digest:
                 problems.append(f"{f.name}: g_digest {digest} != {det['g_digest']}")
@@ -180,24 +242,83 @@ def verify_all(
     return report
 
 
+def _check_calibrations(paths: Paths) -> tuple[str, bool, str]:
+    """Every `calibration = "..."` in levels.toml must exist in the thresholds.
+
+    L5's `detector_threshold` named `calibration = "code"` and
+    `data/assets/thresholds.v1.json` carries only `calibrations.default`, so the
+    first submit on that level would have raised `KeyError: calibration bucket
+    set 'code' not found` out of `parse_thresholds` — a 500 on the level's win
+    condition, at PLAY. `load_levels` could not catch it: it validates check
+    names, param names and dependencies, and the value of a param is not
+    something it can know is wrong. The two files have to be read together, and
+    this is the place that reads both.
+
+    Checked for EVERY ruleset, not just the ones `progression.toml` runs: a
+    ruleset out of the campaign is one `[[level]]` block away from being in it,
+    and that block is exactly the edit that would ship the 500.
+    """
+    from launder_forge.config import load_toml
+
+    levels = load_toml(paths.levels_toml)
+    wanted: dict[str, str] = {}  # calibration name -> where it was named
+    for check_name, params in (levels.get("defaults") or {}).items():
+        if isinstance(params, dict) and params.get("calibration"):
+            wanted[str(params["calibration"])] = f"defaults.{check_name}"
+    for level in levels.get("levels", []):
+        for spec in level.get("checks", []):
+            params = spec.get("params") or {}
+            if params.get("calibration"):
+                wanted[str(params["calibration"])] = f"{level.get('id')}.{spec.get('check')}"
+    if not wanted:
+        return ("config.calibrations", True, "no level names a calibration; all read `default`")
+
+    if not paths.thresholds.exists():
+        return (
+            "config.calibrations",
+            False,
+            f"{paths.rel(paths.thresholds)} does not exist, but levels.toml names "
+            f"{sorted(wanted)}. Run `forge calibrate`.",
+        )
+    available = set(
+        json.loads(paths.thresholds.read_text(encoding="utf-8")).get("calibrations", {})
+    )
+    missing = [
+        f"{name!r} (named by {where}) is not in {paths.rel(paths.thresholds)}; it has "
+        f"{sorted(available)}"
+        for name, where in sorted(wanted.items())
+        if name not in available
+    ]
+    return (
+        "config.calibrations",
+        not missing,
+        "; ".join(missing) or f"{sorted(wanted)} all defined",
+    )
+
+
 def _run_node_parity(paths: Paths) -> tuple[bool, str]:
+    # THE RUNNER IS CHECKED BEFORE node IS. A missing `parity.mjs` is a broken
+    # REPOSITORY and a missing node is a thin ENVIRONMENT, and reporting the
+    # second when the first is true sends the reader to install a toolchain that
+    # would not have helped.
+    script = next(
+        (paths.root / rel for rel in NODE_PARITY_SCRIPTS if (paths.root / rel).exists()), None
+    )
+    if script is None:
+        return False, (
+            "no TS parity runner found. Expected "
+            + ", ".join(NODE_PARITY_SCRIPTS)
+            + ". It belongs to the web package: a script that loads data/golden/vectors.json and "
+            "every data/passages/*.public.json, runs the browser detector over them, and exits "
+            "non-zero on any disagreement. Nothing else is accepted in its place — a runner that "
+            "exits 0 without scoring anything is this check passing by not running."
+        )
     node = which("node")
     if node is None:
         return False, (
             "node is not on PATH. The TS cross-check is the only place a JS `BigInt %` sign "
             "error can surface before a player sees it; install Node 18+ or pass --no-node and "
             "say so in the review."
-        )
-    script = next(
-        (paths.root / rel for rel in NODE_PARITY_SCRIPTS if (paths.root / rel).exists()), None
-    )
-    if script is None:
-        return False, (
-            "no TS parity runner found. Expected one of "
-            + ", ".join(NODE_PARITY_SCRIPTS)
-            + ". It belongs to the web package: a script that loads data/golden/vectors.json and "
-            "every data/passages/*.public.json, runs the browser detector over them, and exits "
-            "non-zero on any disagreement."
         )
     proc = subprocess.run(
         [node, str(script)],

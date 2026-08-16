@@ -221,6 +221,52 @@ def test_damerau_agrees(ts_report: dict[str, Any]) -> None:
         assert damerau_levenshtein(e["a"], e["b"]) == e["distance"], (e["a"], e["b"])
 
 
+def test_the_browser_was_held_to_the_PACKED_expectations(ts_report: dict[str, Any]) -> None:
+    """`parity.mjs` must compare each passage against `forge pack`'s numbers.
+
+    It did not. It read `pub.token_ids`, a field `PassagePublic` has never had
+    (the ids are re-derived from `text` — that is §6.2's rule), so the guarded
+    `encode(text) == token_ids` check never ran on a shipped passage, and
+    nothing else in the runner looked at the `detector` block at all. Everything
+    downstream then compared the browser to ITSELF: `test_real_passages_agree_bit
+    _for_bit` re-scores the ids the browser produced, so a browser that
+    tokenized a passage differently agreed with Python about its own mistake and
+    the Dockerfile's claim to "fail the BUILD on a passage the browser detector
+    reads differently" was false.
+
+    This asserts the comparison happened — the report now echoes the
+    expectations it was held to — and that those expectations are the committed
+    ones.
+    """
+    paths = repo_paths()
+    packed = [p for p in ts_report["passages"] if p["id"].endswith(".public.json")]
+    assert packed, "the TS runner scored no packed passage"
+    for p in packed:
+        expected = p["expected"]
+        assert expected is not None, f"{p['id']}: parity.mjs read no detector expectations"
+        on_disk = json.loads((paths.passages / p["id"]).read_text(encoding="utf-8"))["detector"]
+        assert expected == on_disk, p["id"]
+        assert p["n_scored"] == on_disk["expected_n_scored"], p["id"]
+        assert abs(p["score"] - on_disk["expected_score"]) < 1e-12, p["id"]
+        assert abs(p["z"] - on_disk["expected_z"]) < 1e-9, p["id"]
+
+
+def test_the_whitespace_class_was_actually_compared(ts_report: dict[str, Any]) -> None:
+    """Golden case 8's whitespace class, checked rather than nodded at.
+
+    The runner's line for this ended in `|| true`, so it reported the class as
+    verified on every run — including runs where the bundle exported no
+    `WHITESPACE_CLASS` at all, which was in fact every run: the symbol was not
+    in the esbuild entry point. Two sides that disagree about which codepoints
+    are whitespace split words differently, and every edit distance on that text
+    differs.
+    """
+    paths = repo_paths()
+    golden = json.loads(paths.vectors_json.read_text(encoding="utf-8"))
+    want = golden["cases"]["normalize_and_damerau"]["whitespace_class"]
+    assert ts_report["cases"]["whitespace_class"] == want
+
+
 def test_the_gate_covered_something(ts_report: dict[str, Any]) -> None:
     """A parity gate that silently scored nothing is worse than no gate."""
     cells = sum(len(r) for p in ts_report["passages"] for r in p["g_rows"])

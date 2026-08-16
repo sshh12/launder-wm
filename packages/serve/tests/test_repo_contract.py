@@ -277,6 +277,29 @@ async def test_record_is_an_upsert_on_the_dedup_index(repo: Repos) -> None:
     assert [r.distance for r in rows] == [4]
 
 
+async def test_the_upsert_keeps_the_first_rows_place_in_the_board(repo: Repos) -> None:
+    """A resubmission updates the verdict; it does NOT restamp `created_at`.
+
+    `best_for_level` orders by (distance asc, created_at asc), so `created_at` is
+    the tie-break — and the SQL `ON CONFLICT DO UPDATE` deliberately leaves it,
+    and every other first-insert column, alone. The memory repo replaced the
+    whole row, so a player resubmitting identical text kept their position in a
+    tie under Postgres and dropped to the back of it under the in-memory
+    repository. Every existing test wrote the same timestamp twice, so one suite
+    over both implementations could not see it.
+    """
+    later = NOW + timedelta(minutes=30)
+    await repo.submissions.record(_record(text_hash="1" * 64, distance=3, cleared=False))
+    await repo.submissions.record(_record(text_hash="2" * 64, distance=3, created_at=later))
+    # The SAME text as the first row, resubmitted later and now clearing.
+    await repo.submissions.record(
+        _record(text_hash="1" * 64, distance=3, cleared=True, created_at=later + timedelta(hours=1))
+    )
+
+    rows = await repo.submissions.best_for_level(LEVEL, 10)
+    assert [r.at.astimezone(UTC) for r in rows] == [NOW, later]
+
+
 async def test_levels_do_not_bleed_into_each_other(repo: Repos) -> None:
     """The board is per LEVEL. A clear of level 8 is not a clear of level 7."""
     await repo.submissions.record(_record())
@@ -342,6 +365,28 @@ async def test_judge_cache_round_trips_the_observation(repo: Repos) -> None:
 
 async def test_judge_cache_miss_is_none_not_an_error(repo: Repos) -> None:
     assert await repo.cache.get("nope") is None
+
+
+async def test_rewriting_a_key_updates_the_verdict_not_the_call_that_made_it(
+    repo: Repos,
+) -> None:
+    """`put` on an existing key rewrites the observation, never the provenance.
+
+    The SQL `ON CONFLICT DO UPDATE` sets five columns; `provider`, `model` and
+    the token counts belong to the call that first produced this key, and
+    `stats()` sums them. The memory repo replaced the whole row, so the same
+    sequence of writes reported different token totals on the two engines.
+    """
+    await repo.cache.put("k1", _verdict(input_tokens=1380, output_tokens=90))
+    await repo.cache.put(
+        "k1", _verdict(cleared=False, provider="other", input_tokens=1, output_tokens=1)
+    )
+    got = await repo.cache.get("k1")
+    assert got is not None
+    assert got.cleared is False  # the verdict IS updated
+    assert got.provider == "openai"
+    assert (got.input_tokens, got.output_tokens) == (1380, 90)
+    assert (await repo.cache.stats(NOW - timedelta(days=1))).input_tokens == 1380
 
 
 async def test_purge_version_orphans_only_its_own_version(repo: Repos) -> None:

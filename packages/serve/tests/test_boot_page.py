@@ -34,6 +34,8 @@ from launder_serve.boot import (
     MissingRegion,
     escape_for_textarea,
     json_for_script,
+    render_origin,
+    safe_origin,
 )
 from launder_serve.content import DEV_PASSAGE_ID, Content, load_content
 from launder_serve.engine import CoreDetector
@@ -112,6 +114,31 @@ def test_the_boot_payload_carries_the_players_position_in_the_campaign(
     assert 1 <= boot["level_n"] <= boot["level_count"]
     assert "day" not in boot
     assert "puzzle_number" not in boot
+
+
+def test_the_boot_payload_carries_the_locked_phrases_so_the_rule_can_be_live(
+    renderer: BootRenderer, content: Content
+) -> None:
+    """`locked_phrase` is answerable in the browser, but only with the phrases.
+
+    Without them the level's one distinguishing rule is invisible until a
+    submission fails: nothing on screen moves when the player breaks the phrase,
+    and the checklist says "Verbatim phrase" without ever naming which. They are
+    not a secret — each is a literal substring of the passage in the textarea,
+    and the rejection message renders it back verbatim.
+    """
+    for entry in content.campaign:
+        resolved = content.resolve(entry.n)
+        assert resolved is not None
+        bundle, ruleset = resolved
+        boot = _boot_of(renderer.render(entry.n) or "")
+        assert boot["locked_phrases"] == list(bundle.public.rules.locked_phrases)
+        if any(spec.check == "locked_phrase" for spec in ruleset.checks):
+            assert boot["locked_phrases"], (
+                f"level {entry.n} runs locked_phrase against {bundle.id}, which declares no "
+                "phrases; the gate would raise GateDataError and the browser would have "
+                "nothing to check"
+            )
 
 
 def test_each_level_renders_its_own_passage(renderer: BootRenderer, content: Content) -> None:
@@ -454,6 +481,109 @@ def test_below_the_line_paints_every_element_the_client_paints(
 
 
 # ---------------------------------------------------------------------------
+# the fifth region: where the page says it lives
+# ---------------------------------------------------------------------------
+
+
+def _tag_value(html: str, pattern: str) -> str:
+    m = re.search(pattern, html)
+    assert m is not None, f"no match for {pattern}"
+    return m.group(1)
+
+
+CANONICAL = r'<link rel="canonical" href="([^"]*)"'
+OG_URL = r'<meta property="og:url" content="([^"]*)"'
+
+
+def test_the_checked_in_template_advertises_no_host_at_all(index_template: str) -> None:
+    """The same rule `share_all_template` states for the copied share string.
+
+    "hardcoding a domain here would post the wrong link from every preview
+    deploy and from localhost". A checked-in `https://launder.sshh.io` would
+    make every Railway preview unfurl as production, so the link in the post
+    goes somewhere other than the build being discussed — and it would do it
+    silently, because the page still looks right.
+    """
+    assert _tag_value(index_template, CANONICAL) == "/"
+    assert _tag_value(index_template, OG_URL) == "/"
+
+
+def test_the_rendered_page_names_the_origin_the_request_arrived_on(
+    renderer: BootRenderer, level_n: int
+) -> None:
+    html = renderer.render(level_n, origin="https://launder-pr-12.up.railway.app") or ""
+    assert _tag_value(html, CANONICAL) == "https://launder-pr-12.up.railway.app/"
+    assert _tag_value(html, OG_URL) == "https://launder-pr-12.up.railway.app/"
+
+
+def test_no_origin_leaves_the_two_tags_relative(renderer: BootRenderer, level_n: int) -> None:
+    """`""` is "do not claim an origin", not "fall back to production".
+
+    A relative URL is wrong for a crawler, which will not resolve `og:url`; it
+    is wrong in the harmless direction. Naming production from a host we could
+    not identify is wrong in the direction that misdirects readers.
+    """
+    html = renderer.render(level_n) or ""
+    assert _tag_value(html, CANONICAL) == "/"
+    assert _tag_value(html, OG_URL) == "/"
+
+
+def test_the_origin_is_applied_after_the_cache_and_never_baked_into_it(
+    renderer: BootRenderer, level_n: int
+) -> None:
+    """THE CACHE MUST NOT BE KEYED ON `Host`, and must not leak it either.
+
+    `BootRenderer` caches one rendered page per level because the pristine
+    reading behind it costs a tokenize plus a score. `Host` is client-supplied
+    and can differ on every request, so folding it into the cached HTML leaves
+    only bad options: key the cache on it and hand any client a way to force a
+    re-score per request, or do not and serve one visitor's hostname to the
+    next. The substitution therefore runs on the way out. Assert both halves:
+    each render carries its own origin, and nothing else about the page moved.
+    """
+    a = renderer.render(level_n, origin="https://a.example") or ""
+    b = renderer.render(level_n, origin="https://b.example") or ""
+    assert "https://b.example" not in a
+    assert "https://a.example" not in b
+    assert a.replace("https://a.example/", "/") == b.replace("https://b.example/", "/")
+
+
+@pytest.mark.parametrize(
+    "scheme,host,expected",
+    [
+        ("https", "launder.sshh.io", "https://launder.sshh.io"),
+        ("http", "localhost:8000", "http://localhost:8000"),
+        ("https", "launder-pr-12.up.railway.app", "https://launder-pr-12.up.railway.app"),
+        # Rejected: the value is about to be written into an HTML attribute, and
+        # an allow-list that admits only characters which need no escaping is a
+        # far shorter argument than "our escaping is correct".
+        ("https", "", ""),
+        ("https", 'evil.example"><script>alert(1)</script>', ""),
+        ("https", "evil.example/path", ""),
+        ("https", "evil.example?q=1", ""),
+        ("https", "user:pass@evil.example", ""),
+        ("https", "two hosts", ""),
+        # An IPv6 literal is legitimate and still rejected: it is not reachable
+        # from anywhere a share card gets read, and admitting `[` and `]` buys
+        # nothing but a wider surface.
+        ("https", "[::1]:8000", ""),
+        # Not a web scheme.
+        ("javascript", "x", ""),
+        ("ftp", "example.com", ""),
+    ],
+)
+def test_safe_origin_is_an_allow_list_not_a_parser(scheme: str, host: str, expected: str) -> None:
+    assert safe_origin(scheme, host) == expected
+
+
+def test_a_hostile_host_never_reaches_the_page(renderer: BootRenderer, level_n: int) -> None:
+    hostile = 'evil.example"><script>alert(1)</script>'
+    html = renderer.render(level_n, origin=safe_origin("https", hostile)) or ""
+    assert "evil.example" not in html
+    assert _tag_value(html, OG_URL) == "/"
+
+
+# ---------------------------------------------------------------------------
 # loud failure
 # ---------------------------------------------------------------------------
 
@@ -476,6 +606,90 @@ def test_drifted_markup_raises_rather_than_rendering_a_wrong_instrument(
     renderer = BootRenderer(dist, content, CoreDetector())
     with pytest.raises(MissingRegion, match="#num readout"):
         renderer.render(1)
+
+
+#: The two tags `render_origin` rewrites, matched the way IT matches them
+#: rather than by literal text. The literal differs between the file the source
+#: tree carries and the file vite emits — `web/index.html` carries a
+#: `vite-ignore` on the canonical link (without it vite resolves `href="/"` to
+#: `web/` and the build dies with EISDIR), and vite strips that attribute on the
+#: way out. A test keyed on one spelling would silently stop testing anything
+#: the moment it was handed the other.
+URL_TAG_PATTERNS = [
+    (r'<link rel="canonical" href="[^"]*"[^>]*>', "rel=canonical href"),
+    (r'<meta property="og:url" content="[^"]*"[^>]*>', "og:url content"),
+]
+
+
+@pytest.mark.parametrize("pattern,what", URL_TAG_PATTERNS)
+def test_a_head_that_lost_its_url_tag_raises_rather_than_shipping_a_relative_og_url(
+    index_template: str, pattern: str, what: str
+) -> None:
+    """`render_origin` asserts, exactly like the other four regions.
+
+    A deleted `og:url` is invisible: the page renders, the game plays, and the
+    only symptom is a share card months later that names whatever URL the
+    crawler happened to be given. That is precisely the class of drift
+    `_sub_once` exists to turn into a boot-time failure.
+    """
+    stripped, n = re.subn(pattern, "", index_template)
+    assert n == 1, f"{pattern} does not describe exactly one tag in web/index.html"
+    with pytest.raises(MissingRegion, match=re.escape(what)):
+        render_origin(stripped, "https://launder.sshh.io")
+
+
+@pytest.mark.parametrize("pattern,what", URL_TAG_PATTERNS)
+def test_a_duplicated_url_tag_raises_too(index_template: str, pattern: str, what: str) -> None:
+    """Two `og:url` tags is a page that names two origins; a crawler picks one."""
+    doubled = re.sub(pattern, lambda m: f"{m.group(0)}\n{m.group(0)}", index_template, count=1)
+    with pytest.raises(MissingRegion, match=re.escape(what)):
+        render_origin(doubled, "https://launder.sshh.io")
+
+
+def test_the_BUILT_page_still_carries_both_url_tags() -> None:
+    """Every other test here reads `web/index.html`; production reads `dist/`.
+
+    That distinction is usually free, because vite copies the page through. It
+    is not free for these two tags: `<link href>` is an ASSET REFERENCE to
+    vite, which resolved `href="/"` to the `web/` directory and failed the
+    build outright with `EISDIR`. The fix is the `vite-ignore` attribute, which
+    vite honours by skipping the node and deleting the attribute — so the tag
+    that ships is not byte-identical to the tag that was written, and the file
+    `BootRenderer` opens in production is the one nothing had asserted on.
+    """
+    built = repo_root() / "web" / "dist" / "index.html"
+    if not built.is_file():
+        pytest.skip("web/dist/index.html is not present in this checkout")
+    html = built.read_text(encoding="utf-8")
+    for pattern, what in URL_TAG_PATTERNS:
+        assert len(re.findall(pattern, html)) == 1, what
+    # Comments stripped first: the head's own comment EXPLAINS `vite-ignore`,
+    # and an assertion that failed on the paragraph documenting the attribute
+    # would be fixed by deleting the documentation.
+    markup = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+    assert "vite-ignore" not in markup, "vite left its own opt-out attribute in the shipped page"
+    # ...and `render_origin` still matches against the BUILT text, not just the
+    # source it was written against.
+    rendered = render_origin(html, "https://launder.sshh.io")
+    assert rendered.count('"https://launder.sshh.io/"') == 2
+
+
+def test_rendering_leaves_the_rest_of_the_head_alone(renderer: BootRenderer, level_n: int) -> None:
+    """The share card and the browser chrome survive the five substitutions.
+
+    These strings are static document metadata rather than copy.toml keys (the
+    reasoning is written out in web/index.html's head), which means nothing
+    else in the pipeline is watching them. If a future region rewrite ate the
+    description or a theme-color, the first report would be a bad-looking
+    unfurl on Hacker News.
+    """
+    html = renderer.render(level_n) or ""
+    assert re.search(r'<meta\s+name="description"\s+content="[^"]+"', html) is not None
+    assert '<meta property="og:title" content="Launder WM" />' in html
+    assert '<meta property="og:site_name" content="Launder WM" />' in html
+    assert '<meta name="twitter:card" content="summary" />' in html
+    assert html.count('<meta name="theme-color"') == 2
+    assert 'rel="icon"' in html
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +771,28 @@ async def test_an_unusable_level_falls_back_to_one(
     assert _boot_of((await page_client.get("/", params={"level": value})).text)["level_n"] == 1
     cookied = await page_client.get("/", headers={"Cookie": f"launder_level={value}"})
     assert _boot_of(cookied.text)["level_n"] == 1
+
+
+@pytest.mark.anyio
+async def test_the_share_card_names_the_host_the_visitor_actually_used(
+    page_client: httpx.AsyncClient,
+) -> None:
+    """Preview deploys unfurl as themselves, localhost as localhost."""
+    r = await page_client.get("/", headers={"Host": "launder-pr-12.up.railway.app"})
+    assert _tag_value(r.text, OG_URL) == "http://launder-pr-12.up.railway.app/"
+    assert _tag_value(r.text, CANONICAL) == "http://launder-pr-12.up.railway.app/"
+
+
+@pytest.mark.anyio
+async def test_a_forged_host_header_is_not_reflected_into_the_page(
+    page_client: httpx.AsyncClient,
+) -> None:
+    """`Host` is client-supplied, and this is the one place it is written back
+    into the document. `safe_origin` rejects it and the tags stay relative."""
+    r = await page_client.get("/", headers={"Host": 'evil.example"><script>x</script>'})
+    assert r.status_code == 200
+    assert "evil.example" not in r.text
+    assert _tag_value(r.text, OG_URL) == "/"
 
 
 @pytest.mark.anyio

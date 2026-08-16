@@ -53,8 +53,7 @@ class Settings(BaseSettings):
 
     The defaults are the *development* defaults: `fake` judge, SQLite in a
     local file, no keys required. Production overrides them in Railway's
-    variable panel, and `assert_production_ready()` refuses to boot if it did
-    not.
+    variable panel, and `assert_keys_present()` refuses to boot if it did not.
     """
 
     model_config = SettingsConfigDict(
@@ -171,12 +170,36 @@ class Settings(BaseSettings):
     # -- boot assertions -----------------------------------------------------
 
     def assert_keys_present(self) -> list[str]:
-        """Assert the selected provider has a key. Returns non-fatal warnings.
+        """Assert the judge is configured to actually judge. Returns warnings.
 
         Reads `SecretStr` only to ask whether it is empty. The value never
         leaves this method.
         """
         warnings: list[str] = []
+        # PRODUCTION MUST NOT RUN AN OFFLINE JUDGE.
+        #
+        # This class's docstring has always promised that production "refuses to
+        # boot" if it did not override the development defaults, and nothing
+        # enforced it: `judge_provider` defaults to `fake`, so a Railway variable
+        # panel missing `JUDGE_PROVIDER` produced a server that booted clean,
+        # healthchecked green, and cleared the meaning arm of the gate for
+        # everybody — `FakeJudge` reports `natural_prose=True` with every claim
+        # present, so word salad and dropped claims both pass. `assert_keys_present`
+        # only ever objected to `openai` with no key, i.e. to the one
+        # misconfiguration that is loud.
+        #
+        # `pr` is deliberately NOT covered: sealed variables do not propagate to
+        # PR environments (§11.5), so those run `fake` with no keys ON PURPOSE and
+        # must still boot.
+        if self.is_production and not self.judge_is_paid:
+            raise RuntimeError(
+                f"ENV=production with JUDGE_PROVIDER={self.judge_provider}. That provider "
+                "never contacts a model, so `llm_gate` would clear every submission it "
+                "reached and the meaning half of the gate would be off in production with "
+                "nothing on screen to say so. Set JUDGE_PROVIDER to one of "
+                f"{sorted(PAID_PROVIDERS)} and seal its key (TECH_PLAN.md §11.5), or set "
+                "ENV to something other than production."
+            )
         if self.judge_provider == "openai" and not self.openai_api_key.get_secret_value():
             raise RuntimeError(
                 "JUDGE_PROVIDER=openai but OPENAI_API_KEY is empty. Set it as a "

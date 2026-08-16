@@ -86,6 +86,15 @@
     cursor: default;
     letter-spacing: 0.1em;
   }
+  /* The copy button, for the moment after it works. The label already changed;
+     this is the second, wordless half of the same acknowledgement, so it reads
+     at a glance without anybody having to finish reading. Inverted rather than
+     coloured: the palette carries one accent and it means "above the line". */
+  .btn[data-done] {
+    background: none;
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--ink);
+  }
   .btn[data-variant="ghost"] {
     background: none;
     color: var(--ink);
@@ -176,6 +185,16 @@
     color: var(--ink);
     padding: 0 0 13px;
     max-width: 42ch;
+  }
+  .cx p + p {
+    margin-top: 10px;
+  }
+  /* The live reason a rule is failing right now, above the standing
+     explanation of what the rule is for. Marked by the same accent the meter
+     uses above the line, so the sentence that describes a broken rule reads as
+     the state of the game and not as a second paragraph of instruction. */
+  .cxwhy {
+    color: var(--hot);
   }
   .check .sym {
     width: 20px;

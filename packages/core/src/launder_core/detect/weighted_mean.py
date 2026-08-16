@@ -129,6 +129,31 @@ def _prepare(
     return gm, msk, w
 
 
+def _heat_from(gm: FloatArray, w: FloatArray) -> FloatArray:
+    """`heat[i] = sum_L w[L]*g[i][L] / m`, CLIPPED into `[0, 1]`.
+
+    THE CLIP IS NOT COSMETIC. `depth_weights` renormalizes so that `w.sum()`
+    is exactly `m`, but `gm @ w` is a different summation order, and for an
+    all-ones row it lands on `30.000000000000004` — so `heat` came out as
+    `1.0000000000000002`. That breaks the contract `DetectorScore` states in
+    its own docstring, and it breaks it where it costs the most: `TokenHeat.heat`
+    is `Field(ge=0.0, le=1.0)`, so `/api/detect` raised a pydantic
+    ValidationError — a 500 on every keystroke — for any text containing one
+    n-gram whose thirty tournament layers all read 1. That is roughly 1e-9 per
+    row and therefore certain to happen eventually, and when it does it is
+    permanent for that passage rather than intermittent.
+
+    Clipping rather than rescaling: the true value IS 1 (or 0) at those two
+    extremes, and 2e-16 is float noise, not evidence. The clip can only ever
+    move a value that was already outside a closed interval it is proved to be
+    inside.
+    """
+    m = gm.shape[1]
+    out: FloatArray = (gm @ w) / m
+    np.clip(out, 0.0, 1.0, out=out)
+    return out
+
+
 def heat_values(
     g: ByteArray,
     weights: FloatArray | None = None,
@@ -140,9 +165,7 @@ def heat_values(
     counts is the mask's job, not heat's.
     """
     gm, _msk, w = _prepare(g, None, weights)
-    m = gm.shape[1]
-    out: FloatArray = (gm @ w) / m
-    return out
+    return _heat_from(gm, w)
 
 
 def contributions(
@@ -161,9 +184,9 @@ def weighted_mean_score(
 ) -> DetectorScore:
     """Score a g-value matrix. `mask` defaults to "every row counts"."""
     gm, msk, w = _prepare(g, mask, weights)
-    rows, m = gm.shape
+    rows, _m = gm.shape
 
-    heat: FloatArray = (gm @ w) / m
+    heat: FloatArray = _heat_from(gm, w)
     n_scored = int(msk.sum())
 
     if n_scored == 0:
@@ -178,7 +201,14 @@ def weighted_mean_score(
         )
 
     contrib: FloatArray = np.where(msk, heat, 0.0) / n_scored
-    score = float(contrib.sum())
+    # Clamped for the same reason `heat` is, and it is a SEPARATE failure: a
+    # mean of clipped heats is still summed in floating point, so `n_scored`
+    # copies of `1/n_scored` add up to 1.0000000000000002 for 73 of the first
+    # 400 values of `n_scored`. `DetectorReading.score` and `DetectResponse.score`
+    # are both `Field(ge=0.0, le=1.0)`. The clamp moves the value by at most one
+    # ulp, so `sum(contributions) == statistic` still holds to 1e-15 — far inside
+    # the tolerance the §4.6 decomposition property is asserted at.
+    score = min(1.0, max(0.0, float(contrib.sum())))
     return DetectorScore(
         detector="weighted_mean",
         score=score,

@@ -3,8 +3,11 @@
 # The LLM does not emit a verdict. It emits OBSERVATIONS against a per-passage
 # claim list shipped as repo data; code computes the verdict. That collapses
 # three problems into one mechanism: prompt injection has no "output pass" to
-# target, the tight fence becomes claim-completeness rather than vibes, and all
-# six levels share one prompt, one cache namespace and one eval set.
+# target, the tight fence becomes claim-completeness rather than vibes, and
+# every level that runs `llm_gate` shares one prompt, one cache namespace and
+# one eval set. ("All six levels" was true of CONCEPT.md's six rulesets; the
+# campaign is eight levels drawn from nine rulesets, one of which — L5 — drops
+# `llm_gate` entirely and so never reaches this file.)
 
 schema        = "launder.judge/1"
 judge_version = "g3"
@@ -85,11 +88,27 @@ use_verdict_opinion    = false
 
 # --- caching (§7.5) ---------------------------------------------------------
 # key = sha256("\x1f".join([judge_version, prompt_hash, scoring_version,
-#                           passage_id, level_id, sha256(normalized).hexdigest()]))
+#                           passage_id, passage_digest, sha256(normalized).hexdigest()]))
 # The nonce is EXCLUDED from the cache key — the key hashes the normalized
 # submission, not the rendered prompt.
+#
+# TWO DEVIATIONS FROM §7.5, BOTH DELIBERATE, AND THIS FILE USED TO DESCRIBE
+# NEITHER — it still listed `level_id` and had never heard of `passage_digest`,
+# so the one place a reader would go to learn what the key covers was wrong
+# about both halves.
+#
+#   - `level_id` is OUT. The model is never told what level it is judging; it
+#     reports observations about (passage, text) and CODE derives the verdict
+#     from the level's params. Keying on the level would pay twice for the same
+#     API call to learn the same facts, and would hide an L1 answer from an
+#     identical L4 submission. Strictly more hits, exactly the same verdicts.
+#   - `passage_digest` is IN. Text and claims were covered only by `passage_id`,
+#     so re-authoring a passage's claims under the same id kept serving verdicts
+#     derived from the old ones — and `DELETE FROM judge_cache` did not help,
+#     because the process LRU in front of the repo holds the same key and
+#     survives a database wipe.
 [cache]
-key_fields   = ["judge_version", "prompt_hash", "scoring_version", "passage_id", "level_id", "text_hash"]
+key_fields   = ["judge_version", "prompt_hash", "scoring_version", "passage_id", "passage_digest", "text_hash"]
 key_separator_codepoint = 31   # U+001F ASCII unit separator; the unit-separator join of TECH_PLAN.md 7.5
 scope        = "global"      # not per-player: every player faces the SAME campaign level, so convergent solutions dedupe hard
 cache_failures = true        # most repeat traffic is a player resubmitting identical broken text
@@ -110,7 +129,7 @@ lru_entries    = 2000        # process-local, in front of the repo
 # lives in Postgres and therefore holds across every replica — while the bucket
 # is process-local and each extra replica adds another full bucket (railway.json
 # runs 3, so the real per-IP ceiling is ~3x these numbers). That is what makes
-# a generous limiter safe, and the limits are generous on purpose: a 15-level
+# a generous limiter safe, and the limits are generous on purpose: an 8-level
 # campaign is played in ONE SITTING, and corporate and mobile NAT put many
 # players behind a single X-Real-IP, so a tight bucket throttles legitimate play
 # rather than abuse.

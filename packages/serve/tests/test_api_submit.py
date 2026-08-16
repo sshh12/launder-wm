@@ -18,6 +18,7 @@ import pytest
 from support import keyword_soup, launder
 
 from launder_core.schemas import PassagePublic
+from launder_serve.content import Content
 from launder_serve.judge.fake import FakeJudge
 
 L1 = "L1"  # unicode, word_floor, detector_threshold, llm_gate
@@ -248,6 +249,134 @@ async def test_unknown_level_is_404_not_500(client: httpx.AsyncClient, passage_i
         json={"passage_id": passage_id, "level_id": "L99", "text": "x " * 60},
     )
     assert response.status_code == 404
+
+
+async def test_a_real_http_error_is_never_stored(
+    client: httpx.AsyncClient, passage_id: str
+) -> None:
+    """§11.4 gives `/api/submit` `no-store`, and an error is still a response.
+
+    The endpoint sets that header on its own `Response`; an `ApiError` never
+    touches it, because the handler builds a fresh `JSONResponse`. 404 and 413
+    are heuristically cacheable statuses and there is a CDN in front of this
+    origin, so the header has to come from the error itself.
+    """
+    unknown_passage = await client.post(
+        "/api/submit",
+        json={"passage_id": "p_not_a_passage", "level_id": L1, "text": "x " * 60},
+    )
+    assert unknown_passage.status_code == 404
+    assert unknown_passage.headers["cache-control"] == "no-store"
+
+    too_long = await client.post(
+        "/api/submit",
+        json={"passage_id": passage_id, "level_id": L1, "text": "x " * 40_000},
+    )
+    assert too_long.status_code == 413
+    assert too_long.headers["cache-control"] == "no-store"
+
+
+async def test_the_recorded_ruleset_is_the_campaigns_not_the_requests(
+    client: httpx.AsyncClient,
+    repos: Any,
+    passage_id: str,
+    level_id: str,
+    public_passage: PassagePublic,
+) -> None:
+    """`submission.level_id` names the check list that RAN, not the one asked for.
+
+    The ruleset comes from the campaign position (that is what `Content.resolve`
+    is for), and the request's `level_id` is validated and then discarded — but
+    the row stored the request's copy anyway. A client posting `level_id: "L1"`
+    against level 3's passage was gated by L2 and recorded as L1, which makes
+    the column unable to answer the only question it exists to answer.
+    """
+    assert level_id != L1, "this test needs a level whose ruleset is not the one it posts"
+    solved = launder(public_passage.text, protect=_claim_vocabulary(public_passage), edits=8)
+    response = await client.post(
+        "/api/submit",
+        json={"passage_id": passage_id, "level_id": L1, "text": solved},
+    )
+    assert response.status_code == 200, response.text
+    # The gate ran the CAMPAIGN's ruleset: L2 has an edit_budget and L1 does not.
+    assert "edit_budget" in [row["check"] for row in response.json()["trace"]]
+
+    rows = list(repos.submissions._rows.values())
+    assert len(rows) == 1
+    assert rows[0].level_id == level_id
+
+
+async def test_every_campaign_level_gates_rather_than_500s(
+    client: httpx.AsyncClient, judge: FakeJudge, content: Content
+) -> None:
+    """Every level in the campaign is PLAYABLE against the fixture passages.
+
+    The four checks that only later levels run — `edit_region`, `locked_phrase`,
+    `close_paraphrase`, `detector_floor` — were reachable by no test at all: the
+    API tests all play the one level the `passage_id` fixture points at. That is
+    how a synthetic passage declaring `locked_phrases: []` survived, which makes
+    `locked_phrase` raise `GateDataError` rather than answer, and turns the two
+    levels that run it into an unhandled 500 on the first submit.
+
+    The pristine passage is submitted deliberately: it fails at
+    `detector_threshold`, so every earlier check has to RUN and pass, and the
+    paid judge is never reached.
+    """
+    for entry in content.campaign:
+        resolved = content.resolve(entry.n)
+        assert resolved is not None
+        _, ruleset = resolved
+        response = await client.post(
+            "/api/submit",
+            json={
+                "passage_id": entry.passage_id,
+                "level_id": entry.level_id,
+                "text": content.passages[entry.passage_id].public.text,
+            },
+        )
+        assert response.status_code == 200, f"level {entry.n} ({entry.level_id}): {response.text}"
+        body = response.json()
+        ran = [row["check"] for row in body["trace"]]
+        # Everything up to and including the detector threshold ran, in order.
+        upto = [s.check for s in ruleset.checks]
+        upto = upto[: upto.index("detector_threshold") + 1]
+        assert ran == upto, f"level {entry.n} ({entry.level_id})"
+        assert body["failure"]["check"] == "detector_threshold", f"level {entry.n}"
+    assert judge.calls == 0
+
+
+async def test_over_scrubbing_reports_the_reading_that_rejected_it(
+    client: httpx.AsyncClient, content: Content
+) -> None:
+    """`detector_floor` can fail BEFORE `detector_threshold` ever runs.
+
+    `levels.toml` orders the floor first, because the threshold has to stay
+    adjacent to the judge. `/api/submit` therefore accepts either check as the
+    source of the reading it returns — a player rejected for over-scrubbing must
+    be shown the number that rejected them, not a zero. No test reached a level
+    with a floor on it, so nothing held that.
+    """
+    floors = [
+        entry
+        for entry in content.campaign
+        if any(s.check == "detector_floor" for s in content.resolve(entry.n)[1].checks)  # type: ignore[index]
+    ]
+    assert floors, "no campaign level runs detector_floor; this test is pointed at nothing"
+    entry = floors[0]
+    passage = content.passages[entry.passage_id].public
+    scrubbed = launder(passage.text, protect=_claim_vocabulary(passage), edits=8)
+
+    body = (
+        await client.post(
+            "/api/submit",
+            json={"passage_id": entry.passage_id, "level_id": entry.level_id, "text": scrubbed},
+        )
+    ).json()
+    assert body["failure"]["check"] == "detector_floor", body["failure"]
+    # The real reading, not `_fallback_reading`'s zeros.
+    assert body["detector"]["z_star"] > 0.0
+    assert body["detector"]["n_scored"] > 0
+    assert body["detector"]["z"] < body["detector"]["z_star"]
 
 
 # ---------------------------------------------------------------------------

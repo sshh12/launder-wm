@@ -97,8 +97,8 @@ provisional_note = "Gate unavailable — this one does not count."
 share_template  = "Launder WM — level {level_n} cleared in {distance} 🧼"
 
 # The end-of-campaign share (§12). `{per_level}` is every level's distance in
-# level order, space-separated, in groups of five joined by " · " so fifteen
-# numbers stay scannable in a timeline; a level with no recorded distance is a
+# level order, space-separated, in groups of five joined by " · " so the row
+# stays scannable in a timeline; a level with no recorded distance is a
 # "-". `{total}` is their sum and `{url}` is `location.origin` at RUNTIME —
 # hardcoding a domain here would post the wrong link from every preview deploy
 # and from localhost.
@@ -111,7 +111,7 @@ share_all_template = "Launder WM 🧼\nCleared all {level_count} levels — {tot
 # not spend the instruction budget — but it still has to be plain.
 [screen]
 action      = "Check"          # the action keeps one name through the whole flow
-level_label = "Level {n} of {total}"   # {total} is always shown: 15 is the promise
+level_label = "Level {n} of {total}"   # {total} is always shown: eight is the promise
 next_label  = "Next level"
 all_clear   = "That was the last level. You cleared every one."
 credit      = "Made by @ShrivuShankar"
@@ -124,6 +124,10 @@ source      = "Source"
 # and no way to take it anywhere. One verb, the same one every other app puts
 # on this button.
 copy_label  = "Copy"
+# The same button, for a moment and a half after it works. A control that does
+# its whole job silently reads as a broken control, and this one is pressed at
+# the only point in the game that asks the player for something back.
+copied_label = "Copied"
 # The four sheet dismiss buttons render a bare "×", which a screen reader
 # announces as "multiplication sign". `data-copy-aria-opt` only sets the
 # aria-label when the key exists, so without this the sheets close via a

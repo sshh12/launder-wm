@@ -71,7 +71,11 @@ writeFileSync(
   [
     `export * from ${JSON.stringify(join(WEB, "src/detector/index.ts").replaceAll("\\", "/"))};`,
     `export * from ${JSON.stringify(join(WEB, "src/tokenizer/tokenizer.ts").replaceAll("\\", "/"))};`,
-    `export { normalize, words } from ${JSON.stringify(join(WEB, "src/scoring/normalize.ts").replaceAll("\\", "/"))};`,
+    // WHITESPACE_CLASS is bundled because case 8 asserts it. It was not, so
+    // `ts.WHITESPACE_CLASS` was `undefined` and the whitespace-class check could
+    // only ever have failed — which is presumably why it had been written to
+    // pass unconditionally. Export the symbol, then compare it for real.
+    `export { normalize, words, WHITESPACE_CLASS } from ${JSON.stringify(join(WEB, "src/scoring/normalize.ts").replaceAll("\\", "/"))};`,
     `export { damerau, damerauDistance } from ${JSON.stringify(join(WEB, "src/scoring/damerau.ts").replaceAll("\\", "/"))};`,
   ].join("\n"),
   "utf8",
@@ -253,10 +257,20 @@ const report = {
     check(got === e.expected, `case 8 normalize(${JSON.stringify(e.input)})`, JSON.stringify(got));
     check(ts.normalize(got) === got, "case 8 normalize is idempotent");
   }
+  // A CHECK THAT ENDED IN `|| true` IS NOT A CHECK. This one read
+  // `check(<comparison> || true, "case 8 whitespace class")`, so it reported the
+  // whitespace class as verified on every run, including runs where the TS
+  // module exported no WHITESPACE_CLASS at all (`?? ""` made that spell `[]`).
+  // The class is the domain of `normalize`'s whitespace collapse: if the golden
+  // file and the browser disagree about which codepoints are whitespace, the two
+  // sides split words differently and every edit distance on that text differs.
+  // Compared for real, and the export having gone missing is a failure.
   check(
-    `[${ts.WHITESPACE_CLASS ?? ""}]` === c8.whitespace_class || true,
-    "case 8 whitespace class",
+    typeof ts.WHITESPACE_CLASS === "string" && `[${ts.WHITESPACE_CLASS}]` === c8.whitespace_class,
+    "case 8 whitespace class matches the golden file",
+    `${JSON.stringify(`[${ts.WHITESPACE_CLASS ?? ""}]`)} != ${JSON.stringify(c8.whitespace_class)}`,
   );
+  report.cases.whitespace_class = `[${ts.WHITESPACE_CLASS ?? ""}]`;
   report.cases.normalize = c8.normalize.map((e) => ({
     input: e.input,
     output: ts.normalize(e.input),
@@ -296,19 +310,46 @@ if (existsSync(blobPath)) {
   if (existsSync(passageDir)) {
     for (const f of readdirSync(passageDir).filter((f) => f.endsWith(".public.json")).sort()) {
       const pub = JSON.parse(readFileSync(join(passageDir, f), "utf8"));
-      texts.push({ id: f, text: pub.text, token_ids: pub.token_ids ?? null });
+      // `pub.token_ids` HAS NEVER EXISTED. `PassagePublic` carries `text` and a
+      // `detector` block (expected_n_scored / expected_score / expected_z /
+      // g_digest) and no id array — the ids are re-derived from the text, which
+      // is the whole §6.2 rule. So `token_ids ?? null` was always null, the
+      // `encode(text) == token_ids` check below never ran on a shipped passage,
+      // and the Dockerfile's claim that this gate "fails the BUILD on a passage
+      // the browser detector reads differently" was false: nothing in this file
+      // compared the browser against what `forge pack` recorded. The packed
+      // expectations are the comparison, and they are asserted below.
+      texts.push({ id: f, text: pub.text, expected: pub.detector ?? null });
     }
   }
 
   for (const t of texts) {
     const { ids, spans } = ts.encodeForScoring(tokenizer, t.text);
-    if (t.token_ids) {
+    const r = ts.detect(ids, spans, table, { calibration: cal });
+    if (t.expected) {
+      // THE BROWSER AGAINST THE PACK, not merely the browser against itself.
+      // `forge pack` recomputed these four numbers from the committed assets and
+      // refuses to write a passage whose text does not retokenize to its own
+      // ids; if the browser's tokenizer or detector reads this passage
+      // differently, the player's needle disagrees with the bundle on keystroke
+      // zero and §4.5's runtime tripwire fires in production. Here it is a build
+      // failure instead.
       check(
-        t.token_ids.length === ids.length && t.token_ids.every((v, i) => v === ids[i]),
-        `${t.id}: encode(text) == token_ids`,
+        r.n_scored === t.expected.expected_n_scored,
+        `${t.id}: n_scored matches the packed expectation`,
+        `${r.n_scored} != ${t.expected.expected_n_scored}`,
+      );
+      check(
+        Math.abs(r.score - t.expected.expected_score) <= 1e-12,
+        `${t.id}: score matches the packed expectation`,
+        `${r.score} != ${t.expected.expected_score}`,
+      );
+      check(
+        Math.abs(r.z - t.expected.expected_z) <= 1e-9,
+        `${t.id}: z matches the packed expectation`,
+        `${r.z} != ${t.expected.expected_z}`,
       );
     }
-    const r = ts.detect(ids, spans, table, { calibration: cal });
     const sha = `sha256:${createHash("sha256").update(t.text, "utf8").digest("hex")}`;
     const golden = (vectors.cases["score"].cases ?? []).find((c) => c.text_sha256 === sha);
     if (golden) {
@@ -327,6 +368,10 @@ if (existsSync(blobPath)) {
     report.passages.push({
       id: t.id,
       text_sha256: sha,
+      // The packed expectations this run was held to, echoed so the Python half
+      // (packages/forge/tests/test_parity_ts.py) can assert the comparison
+      // above actually happened rather than trusting that it did.
+      expected: t.expected ?? null,
       n_tokens: r.n_tokens,
       ids,
       spans: spans.map((s) => [s.s, s.e]),

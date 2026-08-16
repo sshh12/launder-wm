@@ -128,6 +128,25 @@ jobs:
             cat /tmp/parity.txt; exit 1
           fi
 
+      # THE §4.5 RECOMPUTATION, WHICH NOTHING HERE WAS RUNNING. pytest covers the
+      # golden vectors (test_pipeline.py) and the TS parity gate (above), and
+      # `sha256sum -c CHECKSUM` covers data/golden/ — but checks 1 and 5 of
+      # `forge verify`, the blake3 of every shipped artifact in data/MANIFEST.json
+      # and the re-derivation of every data/passages/*.public.json from the
+      # committed assets, ran nowhere in CI. A hand-edited passage or an asset
+      # swapped without `forge manifest --write` therefore reached Railway green.
+      # It runs last because it is the slowest and because a failure here is most
+      # readable once the cheaper checks have already spoken.
+      #
+      # `lint-copy` is next to it for the same reason: core's boot-time half is
+      # covered by packages/core/tests/test_copy.py, but §10.7's other two rules
+      # (the keys a check can ASK FOR, and the non-check sections' render
+      # contexts) live in the forge CLI and were only ever run by hand.
+      - name: forge lint-copy
+        run: uv run python -m launder_forge.cli lint-copy
+      - name: forge verify (recompute every checksum, cross-check the TS detector)
+        run: uv run python -m launder_forge.cli verify
+
       - name: alembic upgrade head on a clean DB
         run: uv run alembic upgrade head
         env:
@@ -234,8 +253,25 @@ jobs:
           context: .
           load: true
           tags: launder:ci
+          # `/healthz` is railway.json's healthcheckPath, so its `sha` is the
+          # deploy gate's identity — and it read "unknown" in production because
+          # nothing ever put a commit in the image or the environment.
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # ... and the arg actually landed. An unused ARG is silently ignored by
+      # docker, so "we pass --build-arg" is not evidence that anything reads it.
+      - name: the image knows which commit it is
+        run: |
+          BAKED=$(docker run --rm --entrypoint sh launder:ci -c 'printenv GIT_SHA')
+          echo "GIT_SHA in the image: ${BAKED:-<empty>}"
+          test "$BAKED" = "${{ github.sha }}" || {
+            echo "::error::the image reports GIT_SHA=${BAKED:-<empty>}, expected ${{ github.sha }};"\
+                 "/healthz would answer \"unknown\" and could not tell one deploy from another"
+            exit 1
+          }
 
       - name: no .env in the image
         run: |

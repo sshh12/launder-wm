@@ -503,3 +503,70 @@ def test_pack_recomputes_the_detector_expectations(
     from launder_core.schemas import FORBIDDEN_PUBLIC_FIELDS
 
     assert not FORBIDDEN_PUBLIC_FIELDS.intersection(public), "author-only field leaked into public"
+
+
+def test_a_second_bucket_set_does_not_delete_the_first(
+    tmp_path: Path, cfg: SynthIDConfig, table: np.ndarray
+) -> None:
+    """`--name code` used to overwrite `calibrations.default` rather than join it.
+
+    levels.toml gives L5 its own bucket set ("code has far fewer scored tokens
+    ... its sigma(T) curve and par must be fit separately"), and the only
+    documented way to produce it is `forge calibrate --name code --force`. That
+    wrote a one-entry `calibrations` map over the file, so the shipped `default`
+    curve — the one every other level reads, and one of the four inputs to
+    `asset_bundle_id` — disappeared in the same command.
+    """
+    from launder_core.detect.calibration import load_thresholds
+    from launder_forge.calibrate import ThresholdCurve, calibrate, write_thresholds
+    from launder_forge.corpus import resolve_corpus
+
+    def curve_of(buckets: tuple[int, ...]) -> ThresholdCurve:
+        return calibrate(
+            resolve_corpus("synthetic"),
+            table=table,
+            keys=cfg.keys,
+            ngram_len=cfg.ngram_len,
+            context_history_size=cfg.context_history_size,
+            buckets=buckets,
+            n=200,
+        )
+
+    out = tmp_path / "thresholds.v1.json"
+    write_thresholds(out, curve_of((60, 180)), wm_config_id=cfg.wm_config_id)
+    write_thresholds(out, curve_of((40, 60, 80)), wm_config_id=cfg.wm_config_id, name="code")
+
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert sorted(written["calibrations"]) == ["code", "default"]
+    assert len(load_thresholds(out, name="default").buckets) == 2
+    assert len(load_thresholds(out, name="code").buckets) == 3
+
+
+def test_a_bucket_set_measured_against_other_constants_is_refused(
+    tmp_path: Path, cfg: SynthIDConfig, table: np.ndarray
+) -> None:
+    """`fpr`/`z_star`/`depth` are shared by every group in the file.
+
+    Merging a curve measured at a different false-positive rate would leave one
+    file whose top-level `z_star` describes only the last bucket set written,
+    and core reads that scalar for all of them.
+    """
+    from launder_forge.calibrate import ThresholdCurve, calibrate, write_thresholds
+    from launder_forge.corpus import resolve_corpus
+
+    def curve_of(fpr: float) -> ThresholdCurve:
+        return calibrate(
+            resolve_corpus("synthetic"),
+            table=table,
+            keys=cfg.keys,
+            ngram_len=cfg.ngram_len,
+            context_history_size=cfg.context_history_size,
+            buckets=(60,),
+            n=200,
+            fpr=fpr,
+        )
+
+    out = tmp_path / "thresholds.v1.json"
+    write_thresholds(out, curve_of(1e-2), wm_config_id=cfg.wm_config_id)
+    with pytest.raises(ValueError, match="records fpr"):
+        write_thresholds(out, curve_of(5e-2), wm_config_id=cfg.wm_config_id, name="code")

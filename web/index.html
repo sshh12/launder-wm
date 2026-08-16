@@ -7,6 +7,181 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <title>Launder WM</title>
+
+    <!--
+      ============================================================
+      DOCUMENT METADATA — and why none of it lives in copy.toml
+      ============================================================
+      §10.7 says every PLAYER-FACING string lives in data/config/copy.toml, and
+      web/tests/boot.test.ts fails if the fixture below drifts from that file.
+      The head is the one place that rule does not reach, and the reasoning is
+      written down here rather than left to be re-derived:
+
+        1. THE MECHANISM CANNOT REACH A <meta>. copy.toml arrives in the boot
+           payload and is applied by main.ts through [data-copy] /
+           [data-copy-aria], i.e. by setting textContent and aria-label on
+           elements AFTER JS runs. A crawler or a link unfurler reads the head
+           and leaves; it never runs main.ts. A `data-copy` on a <meta> would be
+           filled long after the only reader had gone.
+        2. THE ALTERNATIVE IS A SECOND COPY IN THE SAME DOCUMENT. Putting the
+           description in copy.toml would mean boot.py substituting it into the
+           head — while the identical sentence also ships, verbatim, inside the
+           #launder-boot JSON on the same page, because the whole copy tree is
+           inlined. One string, two places, one document.
+        3. <title> ALREADY WORKS THIS WAY. "Launder WM" has been static here
+           since M0 and copy.toml has never owned it. og:title and og:site_name
+           are the same document identity restated for a different reader, so
+           they follow the string that is already static rather than inventing
+           a second home for the product's name.
+        4. NOTHING BELOW IS RENDERED IN THE PRODUCT. It is never on screen for
+           a player, so it is not the playtesting surface copy.toml exists to
+           make editable without a code change.
+
+      The consequence is that these strings sit outside `forge lint-copy`, so
+      the COPY STANDARD is enforced on them by web/tests/boot.test.ts instead:
+      the description may not say "human", may not print a "%" figure, and may
+      not call the watermark "secure" (copy.toml's rule 2, §14.4). "A real
+      detector" is the one claim the project does authorise — the key is
+      published, which makes the detector real, not secure — and the
+      description stops there. It does not say what wrote the text and it does
+      not put a number on it.
+
+      DELIBERATELY ABSENT, so nobody adds them back by reflex:
+        - og:image. Every unfurler (Facebook, X, Slack, iMessage) fetches the
+          image over the network and decodes it as PNG/JPEG/GIF/WEBP. An SVG is
+          not accepted and a data: URI is not fetchable, so the only way to
+          have one is a checked-in binary, which this repo does not want. A
+          card with a title and a description and no image is a correct card;
+          an og:image pointing at something no crawler can read is a broken one.
+        - twitter:title / twitter:description. X falls back to og:* for both.
+          Restating them is two more strings that can drift from the two above.
+        - apple-touch-icon. See the icon block below: iOS requires a PNG.
+    -->
+    <meta
+      name="description"
+      content="A browser game about AI text watermarks. Change words in a watermarked passage until a real detector stops finding the watermark."
+    />
+
+    <!--
+      og:url and canonical are RELATIVE ON PURPOSE, and launder-serve rewrites
+      them to the origin the request actually arrived on (boot.py's
+      `render_origin`, a fifth rewritten region).
+
+      A hardcoded https://launder.sshh.io here is the mistake copy.toml already
+      names around `share_all_template`: "hardcoding a domain here would post
+      the wrong link from every preview deploy and from localhost". A Railway
+      preview that unfurls as production is worse than one that unfurls as
+      itself, because the link in the post goes somewhere other than the thing
+      being discussed.
+
+      "/" is the honest un-rendered value: it resolves against the document, so
+      even a page served straight off the static mount points at its own
+      origin. canonical accepts a relative URL by spec; og:url does not, which
+      is exactly why the server rewrite exists. Both name the ROOT rather than
+      the current URL because `?level=` and the `launder_level` cookie select a
+      level of one document — a share of level 7 should still send people to
+      the game, not to a level they have not unlocked.
+
+      `vite-ignore` IS LOAD-BEARING, and the first version without it did not
+      build at all. Vite treats `href` on EVERY <link> as an asset reference:
+      a data: URI and an absolute URL are skipped, but `/` is read as a public
+      path, resolved to `web/`, and handed to readFile — which fails the build
+      with `EISDIR: illegal operation on a directory`. `vite-ignore` is the
+      documented opt-out; it makes vite skip the node and strip the attribute
+      itself from dist/index.html, so the tag that ships is the tag written
+      here. The og:url <meta> beside it needs nothing: vite only inspects
+      `content` on the og:image/og:video/og:audio family.
+    -->
+    <link rel="canonical" href="/" vite-ignore />
+    <meta property="og:url" content="/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Launder WM" />
+    <meta property="og:title" content="Launder WM" />
+    <meta
+      property="og:description"
+      content="A browser game about AI text watermarks. Change words in a watermarked passage until a real detector stops finding the watermark."
+    />
+    <!-- No image, so `summary` rather than `summary_large_image`: the large
+         card reserves space for a picture and renders the gap when none
+         arrives. -->
+    <meta name="twitter:card" content="summary" />
+
+    <!-- --bg, both modes, straight from src/styles/tokens.css. The browser
+         paints its own chrome with this before any CSS loads, so a value that
+         drifts from the token shows up as a seam between the address bar and
+         the page. boot.test.ts reads tokens.css and asserts the two match. -->
+    <meta name="theme-color" content="#e9e7e0" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#14161a" media="(prefers-color-scheme: dark)" />
+
+    <!--
+      ============================================================
+      THE ICON — the wash basin, redrawn for 16px
+      ============================================================
+      Inline, as a data: URI. Three reasons it is not a file:
+        - vite.config.ts sets `publicDir: false`, so web/public is not copied
+          into dist at all; a file there would simply not ship.
+        - no request. With no <link rel="icon"> at all the browser goes and
+          asks for /favicon.ico on every cold visit, which on this server falls
+          through the API routes to the static mount and 404s. A declared icon
+          removes that round trip instead of answering it.
+        - no binary asset, no PNG pipeline, no CDN.
+
+      THE GEOMETRY. It is the `wash` glyph from src/game/gate.ts — the game's
+      verb is "wash it out", and the basin is already the product's central
+      image — but it is NOT that path. Pasting the 24px in-app path here would
+      produce grey mush at 16px, for two measurable reasons:
+
+        - STROKE. The in-app symbols are 1.35 units on a 24 grid. Rendered into
+          a 16px box that is 1.35 * 16/24 = 0.9 DEVICE PIXELS, i.e. below one
+          pixel, so every line antialiases to a soft grey smear. This icon uses
+          2.2 units = 1.47px at 16, and 2.9px at the 32px size browsers ask for
+          on a retina tab strip. 1.63x the in-app weight.
+        - DETAIL. `wash` is three parts: the basin, a five-node wave with three
+          bumps, and the arc over the rim. At 16px each bump of that wave is
+          1.6px wide and reads as a straight bar, and the arc sits ~4.8 units
+          off the rim, which at a 2.2 stroke leaves under a device pixel of gap
+          — the two merge into one thick smudge. So the arc is DROPPED and the
+          wave is reduced from three bumps to one full period.
+
+      What survives is the two irreducible ideas: the vessel and the water. At
+      16px it reads as a basin with a line in it, which is already
+      unmistakable; the wave resolves as a wave from 32px up. Every clearance
+      in the drawing was solved for the 16px case: 2.0 units (1.35px) between
+      the wave and the rim above it, 1.9 (1.27px) to the basin floor below it,
+      and 2.0 to each wall — which is why the wave spans only x 7.6..16.4
+      rather than the full interior.
+
+      COLOUR. --ink from tokens.css, both modes, via a media query INSIDE the
+      SVG. `stroke="currentColor"` — what the in-app symbols use — is wrong
+      here: a favicon is its own document with no cascade from the page, so
+      currentColor resolves to the initial black and disappears against dark
+      browser chrome. The presentation attribute carries the light value and
+      the @media rule overrides it, so a browser that renders SVG icons but
+      ignores the query still gets the readable-on-white ink rather than
+      nothing. Both values are tokens; no new colour is introduced.
+
+      NO apple-touch-icon. It would have to be this same data: URI, and iOS
+      does not accept SVG for it — Safari requires a PNG and silently falls
+      back to a screenshot of the page when it cannot decode one, which is a
+      worse home-screen tile than the default. It is not omitted for lack of
+      trying; it cannot be done without the binary asset this file is refusing.
+
+      Decoded, the URI below is exactly:
+
+        <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'
+             fill='none' stroke='#1b1a17' stroke-width='2.2'
+             stroke-linecap='round' stroke-linejoin='round'>
+          <style>@media(prefers-color-scheme:dark){svg{stroke:#dcddd7}}</style>
+          <path d='M2.4 5.6h19.2l-1.6 11a2.5 2.5 0 0 1-2.5 2.2H6.5a2.5 2.5 0 0 1-2.5-2.2Z'/>
+          <path d='M7.6 12.3c1.5-2 2.9-2 4.4 0s2.9 2 4.4 0'/>
+        </svg>
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231b1a17' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cstyle%3E@media(prefers-color-scheme:dark){svg{stroke:%23dcddd7}}%3C/style%3E%3Cpath d='M2.4 5.6h19.2l-1.6 11a2.5 2.5 0 0 1-2.5 2.2H6.5a2.5 2.5 0 0 1-2.5-2.2Z'/%3E%3Cpath d='M7.6 12.3c1.5-2 2.9-2 4.4 0s2.9 2 4.4 0'/%3E%3C/svg%3E"
+    />
+
     <script type="module" src="/src/main.ts"></script>
 
     <!--
@@ -15,7 +190,7 @@
       ============================================================
       This file is the level page: `GET /` picks which level to render from
       `?level=`, then the `launder_level` cookie, then 1. launder-serve
-      rewrites exactly four regions, each delimited by a comment pair or
+      rewrites exactly five regions, each delimited by a comment pair or
       named below, and nothing else:
 
         1. LAUNDER:BOOT   the JSON payload below — the level, the detector
@@ -41,6 +216,12 @@
                           only displayed number; z stays internal), and
                           #stateword's data-copy flipped to readout.below
                           when the passage already sits under z*.
+        5. og:url and     the "/" above, rewritten to the ORIGIN this request
+           canonical      arrived on. Unlike the four above it is applied per
+                          request rather than per level, because it is the one
+                          thing on the page that varies by host and the render
+                          cache must not be keyed on an attacker-supplied
+                          header. See boot.py's `render_origin`.
 
       Everything else is filled from the boot payload by main.ts:
       [data-copy] sets textContent, [data-copy-aria] sets aria-label, and
@@ -68,6 +249,7 @@
 "level_n": 1,
 "level_count": 1,
 "passage_id": "p_dev",
+"locked_phrases": [],
 "level": {
 "id": "L2",
 "name": "Budget",
@@ -162,6 +344,7 @@
 "credit": "Made by @ShrivuShankar",
 "source": "Source",
 "copy_label": "Copy",
+"copied_label": "Copied",
 "close_label": "Close"
 },
 "check": {
@@ -518,6 +701,16 @@
           <div class="label-sub" id="rsub"></div>
           <div class="label-syms" id="rsyms"></div>
         </div>
+        <!-- A PROVISIONAL clear: the gate could not run its meaning half (the
+             judge was unreachable, or the day's spend cap was hit), so this one
+             does not count and the campaign does not advance. It had no home on
+             this sheet at all — the note existed only on #gatesheet, where
+             `provisional` is unreachable because run_gate sets it False on every
+             rejection. So the one outcome where it CAN be true rendered as an
+             ordinary clear, the client silently skipped markCleared and the
+             cookie, and the player found the level uncleared on their next visit
+             with nothing on screen having said why. -->
+        <p class="gnote" id="rnote" hidden></p>
         <div class="lbl" data-copy-opt="screen.diff_label"></div>
         <div class="diff" id="rdiff"></div>
         <div class="sharebox" id="rshare"></div>

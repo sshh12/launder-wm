@@ -109,6 +109,11 @@ export function layoutFromWords(text: string): MirrorLayout {
  * inventing one for the word the player is mid-way through typing is exactly
  * the invention §10.4 forbids.
  */
+/** `NaN` (an out-of-range index) is neither, which is what makes the boundary
+ *  checks below safe at position 0 and at the end of the string. */
+const isHighSurrogate = (u: number): boolean => u >= 0xd800 && u <= 0xdbff;
+const isLowSurrogate = (u: number): boolean => u >= 0xdc00 && u <= 0xdfff;
+
 export function reanchorTokens(
   tokens: readonly TokenHeat[],
   oldText: string,
@@ -124,6 +129,33 @@ export function reanchorTokens(
     oldText.charCodeAt(oldText.length - 1 - s) === newText.charCodeAt(newText.length - 1 - s)
   ) {
     s += 1;
+  }
+  // THE SCAN COUNTS UTF-16 CODE UNITS, AND A CODE POINT CAN BE TWO OF THEM.
+  //
+  // Every emoji in U+1F600..U+1F63F shares the high surrogate D83D, so replacing
+  // one with another matched the first unit and stopped on the second: the
+  // common prefix ended BETWEEN the halves of an astral character. The dirty
+  // span then began mid-pair, `layoutFromTokens` sliced there, and the mirror
+  // rendered a lone high surrogate in the gap span and a lone low surrogate in
+  // the token — two replacement boxes where the textarea draws one emoji. The
+  // "every character exactly once" invariant survives that (the concatenation is
+  // unchanged) but the GEOMETRY does not, and the mirror's geometry is the only
+  // reason it exists. Surrogate halves never shape across an element boundary,
+  // so the fix is to refuse a boundary that splits a pair: back the prefix off
+  // its trailing high surrogate and the suffix off its leading low surrogate.
+  // Both only ever shrink, so `p + s <= maxCommon` still holds.
+  if (
+    isHighSurrogate(oldText.charCodeAt(p - 1)) &&
+    (isLowSurrogate(oldText.charCodeAt(p)) || isLowSurrogate(newText.charCodeAt(p)))
+  ) {
+    p -= 1;
+  }
+  if (
+    isLowSurrogate(oldText.charCodeAt(oldText.length - s)) &&
+    (isHighSurrogate(oldText.charCodeAt(oldText.length - s - 1)) ||
+      isHighSurrogate(newText.charCodeAt(newText.length - s - 1)))
+  ) {
+    s -= 1;
   }
   const delta = newText.length - oldText.length;
   const oldSuffixStart = oldText.length - s;

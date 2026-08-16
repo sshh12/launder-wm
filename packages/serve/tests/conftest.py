@@ -66,7 +66,17 @@ def _passage(
             "expected_z": 6.44,
             "g_digest": "blake3:" + "ab" * 32,
         },
-        "rules": {"min_words": 50, "max_word_edits": 12, "locked_phrases": []},
+        # A REAL locked phrase, verbatim from PASSAGE_TEXT above. It used to be
+        # an empty list on every synthetic passage, which made the campaign's
+        # `locked_phrase` level unplayable in the fixture — the check raises
+        # GateDataError rather than passing when a passage declares none, so the
+        # one level testing that rule 500'd instead of gating, and nothing said
+        # so because no test reached it.
+        "rules": {
+            "min_words": 50,
+            "max_word_edits": 12,
+            "locked_phrases": ["They found the same gap."],
+        },
         "claims": [
             {
                 "id": "c1",

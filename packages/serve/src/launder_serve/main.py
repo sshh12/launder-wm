@@ -37,7 +37,7 @@ from launder_core.levels import unsatisfiable_levels
 from launder_core.schemas import MAX_TEXT_BYTES
 from launder_serve.api import api_router
 from launder_serve.api.deps import AppState
-from launder_serve.boot import BootRenderer
+from launder_serve.boot import BootRenderer, safe_origin
 from launder_serve.content import Content, error_message, load_content
 from launder_serve.engine import CoreDetector, CoreScorer, ServerDetector
 from launder_serve.errors import ApiError, BodyTooLarge, NotFound, error_payload
@@ -387,7 +387,22 @@ def _mount_index(app: FastAPI, state: AppState, settings: Settings) -> None:
             request.cookies.get(LEVEL_COOKIE),
             state.content.level_count,
         )
-        html = renderer.render(level_n)
+        # `og:url` and `canonical` name the origin this request arrived on —
+        # never a hardcoded domain. A Railway preview must unfurl as itself, or
+        # the link in the post goes somewhere other than the build being
+        # discussed; `localhost` must unfurl as localhost or not at all. This is
+        # the head's version of what `share_all_template` does with
+        # `location.origin` in the browser.
+        #
+        # `request.url.scheme` is the FORWARDED scheme: the Dockerfile runs
+        # uvicorn with `--proxy-headers`, so Railway's `X-Forwarded-Proto` has
+        # already been applied to the ASGI scope and the tags say `https` rather
+        # than the `http` of the internal hop. `netloc` is the `Host` header,
+        # which is attacker-supplied — `safe_origin` is an allow-list, and it
+        # returns "" for anything it does not recognise, which leaves the tags
+        # relative rather than reflecting a hostile string into the page.
+        origin = safe_origin(request.url.scheme, request.url.netloc)
+        html = renderer.render(level_n, origin=origin)
         if html is None:
             # Nothing to render: no packed passages AND no dev fixture. Serving
             # the raw template would hand the player a page whose every API call

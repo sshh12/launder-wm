@@ -745,8 +745,9 @@ def pack_cmd(
     `[[level]]` list in `data/config/progression.toml`, hand-edited: a packed
     passage nothing points at is never played, and a `[[level]]` block naming a
     passage that was never packed is a boot failure (`strict = true`), which is
-    the point — a hole in a 15-level campaign is a broken build, not a skipped
-    day.
+    the point — a hole in the 8-level campaign is a broken build, not a skipped
+    day. Packing a passage the campaign does not name is not an error: the spare
+    authored passages in `data/passages/` outnumber the levels on purpose.
 
     The four gates are `pack_passage`'s, not this function's: `encode(text) ==
     token_ids`, the detector expectations RECOMPUTED (never copied from the

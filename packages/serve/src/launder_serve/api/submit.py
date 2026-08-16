@@ -111,7 +111,15 @@ async def submit(request: Request, body: SubmitRequest, response: Response) -> S
     record = SubmissionRecord(
         level_n=level_n,
         passage_id=bundle.id,
-        level_id=body.level_id,
+        # THE RULESET THAT RAN, not the one the request named. `body.level_id` is
+        # validated above and then deliberately discarded, and this row used to
+        # store it anyway: a client is free to post `level_id: "L1"` against
+        # level 3's passage, and the submission was recorded as having been
+        # played under L1 while the gate ran L2. `submission.level_id` is the
+        # forensic record of WHICH CHECK LIST decided the outcome — a row whose
+        # ruleset is a client-supplied string cannot answer the one question it
+        # exists to answer.
+        level_id=ruleset.id,
         text_hash=hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
         text=body.text,
         cleared=gate.cleared,

@@ -92,9 +92,26 @@ checks = [
 # DEVIATION FROM CONCEPT.md #2 (§7.6): L5 drops `llm_gate`. CONCEPT.md's table
 # says each level ADDS a check; L5 adds `unit_test` and removes `llm_gate`. The
 # unit test is a strictly stronger meaning check for code, and asking a
-# prose-naturalness judge about Python produces noise. L5 also gets its own
-# calibration bucket: code has far fewer scored tokens and far lower
-# optionality, so its sigma(T) curve and par must be fit separately.
+# prose-naturalness judge about Python produces noise.
+#
+# L5 SHOULD get its own calibration bucket — code has far fewer scored tokens
+# and far lower optionality, so its sigma(T) curve and par want fitting
+# separately — and it does NOT have one. This line used to read
+# `calibration = "code"`, and `data/assets/thresholds.v1.json` carries only
+# `calibrations.default`, so the first submit on this level would have died in
+# `parse_thresholds` with `KeyError: calibration bucket set 'code' not found`.
+# A 500 at play, on the level's win condition, which ARCHITECTURE.md §8 exists
+# to forbid — reachable the moment L5 is given a `[[level]]` block, and hidden
+# until then only because the campaign does not run it and `unit_test`'s missing
+# dependency drops it at boot anyway. Two accidents are not a design.
+#
+# Naming an unmeasured bucket is worse than using the measured one, so L5 reads
+# `default` until a real curve exists. Producing it is WORK, not an edit: a code
+# corpus, `forge calibrate --corpus <path> --name code --force`, and a re-pack
+# of any L5 passage (the packed `expected_z` is a function of this file).
+# `forge verify`'s `config.calibrations` check now refuses any `calibration`
+# name the thresholds file does not define, so putting the line back before
+# measuring the bucket fails the build instead of the player.
 [[levels]]
 id         = "L5"
 name       = "Code"
@@ -104,7 +121,7 @@ checks = [
   { check = "unicode_sanitation", params = { homoglyph_policy = "reject_always" } },
   { check = "word_floor", params = { min_words = 0 } },
   { check = "unit_test", params = { suite_ref = "passage.rules.unit_test_id", timeout_ms = 2000, memory_mb = 64 } },
-  { check = "detector_threshold", params = { max_z = 0.0, calibration = "code" } },
+  { check = "detector_threshold", params = { max_z = 0.0 } },
 ]
 
 # ---------------------------------------------------------------------------

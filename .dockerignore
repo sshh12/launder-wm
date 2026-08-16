@@ -3,7 +3,14 @@
 #
 # Verify after every build (both are CI steps):
 #   docker run --rm launder:ci sh -c 'ls -a /app | grep -qE "^\.env"'   must FAIL
-#   docker run --rm launder:ci pip list | grep -i torch                 must be EMPTY
+#   docker run --rm launder:ci sh -c 'ls /app/.venv/lib/python*/site-packages'
+#                                                        must list no torch*
+#
+# THE SECOND ONE USED TO BE SPELLED `pip list | grep -i torch`. The venv has no
+# pip, so that command printed nothing whatever the venv contained, and the `!`
+# in front of it turned "produced no output" into a pass. A gate that cannot see
+# what it is guarding is not a gate; it is now a listing of site-packages plus a
+# `launder_core-*.dist-info` proof that the path is a real venv at all.
 
 .env
 .env.*
@@ -35,6 +42,11 @@ data/dev/
 # entirely. Excluding the answer key from the artifact that ships is worth the
 # extra file.
 data/passages/*.author.json
+# `forge claims` writes its drafts here by default, and ARCHITECTURE.md §11 names
+# them alongside the answer key as author-side data the server refuses. A draft
+# left in the working tree shipped in the image; excluded by shape, not by
+# remembering to delete it.
+data/passages/*.claims.draft.json
 
 web/node_modules
 web/dist

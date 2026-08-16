@@ -60,8 +60,23 @@ const brotli = (buf) =>
 
 console.log("size-gate: §5.2 asset budget");
 
+// THE LARGEST ASSET ON THE WIRE IS NOT AN OPTIONAL ONE. This was
+// `if (existsSync(blob)) gate(...)`, so a moved path or a Docker stage that
+// forgot to `COPY data/assets/` dropped 1.19 MB — 93% of the total budget —
+// out of the measurement and the gate still printed "size-gate: OK". The blob
+// is committed and both callers (the Dockerfile's web stage, which copies it to
+// /data/assets, and CI) have it; not finding it means the gate is looking in the
+// wrong place, which is a failure, not a pass.
 const blob = join(REPO, "data/assets/gemma3-tok.v1.bin.br");
-if (existsSync(blob)) gate("tokenizer blob (br, on the wire)", statSync(blob).size, BUDGET.tokenizerBlob);
+if (!existsSync(blob)) {
+  console.error(
+    `\nsize-gate: ${blob} does not exist, so the tokenizer blob — the single largest asset ` +
+      "the player downloads — was not measured. Run from the repo (or the Docker web stage, " +
+      "which COPYs data/assets/ to /data/assets/).",
+  );
+  process.exit(1);
+}
+gate("tokenizer blob (br, on the wire)", statSync(blob).size, BUDGET.tokenizerBlob);
 
 if (!existsSync(DIST)) {
   console.error("\nsize-gate: dist/ does not exist. Run `npm run build` first.");

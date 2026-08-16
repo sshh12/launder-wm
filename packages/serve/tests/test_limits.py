@@ -82,6 +82,25 @@ def test_bucket_table_is_bounded() -> None:
     assert len(limiter._buckets) <= 16
 
 
+def test_a_bucket_key_is_bounded_in_LENGTH_as_well_as_in_COUNT() -> None:
+    """`max_buckets` bounds how MANY buckets exist; nothing bounded how BIG one is.
+
+    The key is a request header, so its size is the client's choice: 20,000
+    buckets holding a 16 KB header value each (h11's per-header ceiling) is
+    ~320 MB of dict on a service sized at 0.4 GB. An address is at most 53
+    characters, so anything longer is not one and collapsing them together is
+    the same policy `SHARED_BUCKET_KEY` already applies to an unidentifiable
+    caller.
+    """
+    key = client_key({"X-Real-IP": "9" * 16_000})
+    assert len(key) <= 64
+    # ...and a real address, v4 or v6, is untouched, so distinct clients stay
+    # in distinct buckets.
+    v6 = "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+    assert client_key({"X-Real-IP": v6}) == v6
+    assert client_key({"X-Real-IP": "203.0.113.7"}) != client_key({"X-Real-IP": "203.0.113.8"})
+
+
 @pytest.mark.parametrize("bad", [(0, 3), (10, 0)])
 def test_a_nonsense_limit_is_a_construction_error(bad: tuple[int, int]) -> None:
     per_hour, burst = bad

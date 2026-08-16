@@ -95,6 +95,17 @@ DERIVED_PARAMS: dict[str, frozenset[str]] = {
     "detector_threshold": frozenset(
         {"z_display", "z_star_display", "z_target_display", "z", "z_star"}
     ),
+    # The campaign's own rulesets (L7/L8/L9) added these two and the table was
+    # not extended, so on the fallback path — the one taken when core's REGISTRY
+    # cannot be imported, which is exactly the reduced environment this table
+    # exists for — every template in `[check.detector_floor]` and
+    # `[check.edit_region]` that names a value the CHECK computes was reported as
+    # an unresolvable placeholder. Copied from the two classes' own
+    # `config_params | template_params`, which is what sources 1 and 2 read.
+    "detector_floor": frozenset(
+        {"min_z", "calibration", "z_display", "z_star_display", "z_floor_display"}
+    ),
+    "edit_region": frozenset({"editable_prefix_words", "first_bad_word_index", "n_outside"}),
     "llm_gate": frozenset({"claim_label", "added", "code", "kind"}),
 }
 
@@ -121,8 +132,11 @@ SECTION_PARAMS: dict[str, frozenset[str]] = {
             "url",
         }
     ),
-    # `n`/`total` are the level rail's "3 / 15": the screen chrome names the
-    # position, not the puzzle.
+    # `n`/`total` are the level rail's "3 / 8": the screen chrome names the
+    # position, not the puzzle. `total` is `len(Content.campaign)`, i.e. the
+    # number of `[[level]]` blocks in progression.toml — NOT the number of files
+    # in data/passages/, which holds spare authored passages the campaign does
+    # not run.
     "screen": frozenset({"distance", "max_word_distance", "n_words", "min_words", "n", "total"}),
     "errors": frozenset({"retry_after_s"}),
     "intro": frozenset({"n_words", "z_display"}),

@@ -214,8 +214,17 @@ async def test_the_pipeline_short_circuits_at_the_first_failure() -> None:
 
 
 async def test_a_mechanical_failure_costs_zero_api_calls_at_every_level() -> None:
-    """The claim \u00a77.1 makes about ordering, asserted for all six levels."""
-    for level_id in ("L1", "L2", "L3", "L4", "L5", "L6"):
+    """The claim \u00a77.1 makes about ordering, asserted for EVERY shipped level.
+
+    The list was hardcoded `L1..L6` and levels.toml has since grown L7, L8 and
+    L9 \u2014 the three rulesets that exist *because* the campaign was measured and
+    found scriptable. So the only three levels whose ordering had never been
+    checked were the three added to fix an ordering-adjacent problem. Read the
+    ids from `load_levels()`: a ruleset that ships is a ruleset this asserts.
+    """
+    level_ids = sorted(load_levels())
+    assert len(level_ids) >= 9, "levels.toml shrank; this sweep must cover all of it"
+    for level_id in level_ids:
         judge = FakeJudge(all_present())
         detector = FakeDetector(z=99.0)
         ctx = context(
@@ -273,6 +282,77 @@ async def test_the_trace_always_returns() -> None:
     assert len(result.trace) == 2
     assert result.trace[0].status == "pass"
     assert result.trace[1].status == "fail"
+
+
+async def test_the_two_sided_window_clears_and_rejects_on_both_sides() -> None:
+    """L8 is the whole reason `detector_floor` exists and no test ran it through
+    the pipeline. Under-scrubbing fails at the threshold, over-scrubbing fails
+    at the floor, and the floor's rejection carries the reading that caused it —
+    a player rejected for over-scrubbing must be shown a number, not a zero."""
+    edited = PASSAGE_TEXT.replace("committee", "board")
+    inside = await run_gate(
+        context(
+            level_id="L8",
+            raw=edited,
+            deps=Deps(detector=FakeDetector(z=1.5), judge=FakeJudge(all_present())),
+        )
+    )
+    assert inside.cleared is True
+
+    too_clean = await run_gate(
+        context(
+            level_id="L8", raw=edited, deps=Deps(detector=FakeDetector(z=0.0), judge=FakeJudge())
+        )
+    )
+    assert too_clean.failure is not None
+    assert too_clean.failure.check == "detector_floor"
+    assert too_clean.failure.meta["z"] == 0.0
+
+    still_hot = await run_gate(
+        context(
+            level_id="L8", raw=edited, deps=Deps(detector=FakeDetector(z=9.0), judge=FakeJudge())
+        )
+    )
+    assert still_hot.failure is not None
+    assert still_hot.failure.check == "detector_threshold"
+
+
+async def test_the_finale_runs_every_constraint_in_the_game_at_once() -> None:
+    """L9 stacks all eight checks and nothing exercised it end to end.
+
+    A ruleset that only ever loads is a ruleset whose first real run is a
+    player's — which is how a level nobody played 500'd on its first submit
+    (ARCHITECTURE.md §8).
+    """
+    judge = FakeJudge(all_present())
+    detector = FakeDetector(z=1.5)
+    edited = PASSAGE_TEXT.replace("committee", "board")
+    result = await run_gate(
+        context(level_id="L9", raw=edited, deps=Deps(detector=detector, judge=judge))
+    )
+    assert result.cleared is True, result.failure
+    assert [r.check for r in result.trace] == [
+        "unicode_sanitation",
+        "word_floor",
+        "locked_phrase",
+        "edit_budget",
+        "close_paraphrase",
+        "detector_floor",
+        "detector_threshold",
+        "llm_gate",
+    ]
+
+    # Two words is the whole budget, and it binds before anything is paid for.
+    over = (
+        PASSAGE_TEXT.replace("committee", "board")
+        .replace("proposal", "plan")
+        .replace("Nobody", "No one")
+    )
+    spent = await run_gate(
+        context(level_id="L9", raw=over, deps=Deps(detector=FakeDetector(z=1.5), judge=FakeJudge()))
+    )
+    assert spent.failure is not None and spent.failure.check == "edit_budget"
+    assert spent.failure.params["max_word_distance"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -496,9 +576,22 @@ def test_z_is_formatted_for_a_human() -> None:
     assert format_z(-0.04) == "-0.0"
 
 
-async def test_l5_asks_for_its_own_calibration_bucket() -> None:
-    """Deviation #2: code has far fewer scored tokens and far lower
-    optionality, so its sigma(T) curve is fit separately (§7.6)."""
+async def test_l5_drops_the_judge_and_reads_the_default_calibration() -> None:
+    """Deviation #2: L5 drops `llm_gate` — code has almost no room to say the
+    same thing a different way, so a meaning judge has nothing to judge.
+
+    IT NO LONGER ASKS FOR A `code` BUCKET, and this test used to assert that it
+    did. §7.6 argues for one — code has far fewer scored tokens and far lower
+    optionality, so its sigma(T) curve wants fitting separately — but the curve
+    was never measured: `thresholds.v1.json` carries only `calibrations.default`,
+    and `parse_thresholds` raises `KeyError` for any other name. That made L5's
+    win condition a 500 at PLAY, which ARCHITECTURE.md §8 forbids outright, and
+    it was invisible only because L5 is out of the campaign and is dropped at
+    boot for a missing `unit_tests` dep — masked by two accidents rather than by
+    design. `forge verify`'s `config.calibrations` check now refuses any name the
+    thresholds file does not define, so this cannot come back without the
+    measurement that justifies it.
+    """
     detector = FakeDetector(z=0.0)
     passage = make_passage(rules={"min_words": 0, "unit_test_id": "reverse_words"})
     ctx = context(
@@ -509,7 +602,7 @@ async def test_l5_asks_for_its_own_calibration_bucket() -> None:
     )
     result = await run_gate(ctx)
     assert result.cleared is True
-    assert detector.last_calibration == "code"
+    assert detector.last_calibration is None, "L5 reads `default` until a code bucket is measured"
     assert "llm_gate" not in [r.check for r in result.trace]
 
 
@@ -694,6 +787,35 @@ def test_the_lemma_tables_are_committed_files_that_are_actually_read() -> None:
     # The in-code fallback IS the file. Two copies of a table that decides
     # verdicts is exactly the drift lint_copy catches for copy.
     assert_tables_match_files()
+
+
+def test_the_lemma_fallback_is_reachable_when_there_is_no_data_tree() -> None:
+    """§2.1: `launder_core` runs in a venv with pydantic, blake3 and numpy and
+    NO `data/` anywhere, which is what the in-code tables are for.
+
+    `_load_tables` caught `FileNotFoundError` — what
+    `launder_core.watermark.config.data_dir` raises — but the `data_dir` it
+    imports is `gates.feedback`'s, which raises `CopyError`. So the documented
+    fallback was unreachable and `lemma()` raised in the one environment the
+    fallback exists to serve.
+    """
+    from launder_core.gates.checks import close_paraphrase as cp
+    from launder_core.gates.feedback import CopyError
+
+    def no_data_tree() -> object:
+        raise CopyError("could not locate the repo's data/ directory")
+
+    original = cp.data_dir
+    cp._load_tables.cache_clear()
+    try:
+        cp.data_dir = no_data_tree  # type: ignore[assignment]
+        assert cp._load_tables() is None
+        assert cp.stopwords() is cp.STOPWORDS
+        assert cp.irregular_lemmas() is cp.IRREGULAR_LEMMAS
+        assert cp.lemma("children") == "child"
+    finally:
+        cp.data_dir = original
+        cp._load_tables.cache_clear()
 
 
 def test_editing_the_committed_lemma_table_changes_the_lemma() -> None:

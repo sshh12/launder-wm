@@ -30,6 +30,7 @@ from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from launder_core.detect.calibration import load_thresholds
 from launder_core.gates.checks.close_paraphrase import assert_tables_match_files
 from launder_core.gates.feedback import CopyBook, load_copy
 from launder_core.levels import load_levels, validate_level
@@ -368,6 +369,34 @@ class ProgressionFile(BaseModel):
                 "in file order: `level_n` is what the player sees, what the cookie "
                 "carries and what the progress table is keyed on."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _one_level_per_passage(self) -> ProgressionFile:
+        """No passage may be used by two levels.
+
+        `Content.level_n_of` maps a passage BACK to its campaign position, and it
+        is the only mapping there is: `/api/submit` takes `passage_id` from the
+        request and refuses to take `level_n`, precisely so the client cannot
+        assert where it is in the campaign. That inverse only exists if the
+        forward map is injective. With a passage listed twice, `level_n_of`
+        returns the FIRST match, so a player who cleared level 7 would have the
+        clear recorded against level 3 and would unlock level 4 — which is the
+        row "claiming the player cleared a level they never played" that
+        `level_n_of`'s own docstring exists to prevent. Nothing checked it.
+        """
+        seen: dict[str, int] = {}
+        for spec in self.levels:
+            first = seen.setdefault(spec.passage_id, spec.n)
+            if first != spec.n:
+                raise ValueError(
+                    f"progression.toml runs both level {first} and level {spec.n} on passage "
+                    f"{spec.passage_id!r}. A passage is a level's identity: the submit request "
+                    "carries the passage and the SERVER derives the campaign position from it, "
+                    "so a passage on two levels means one of them can never be submitted to and "
+                    "its clears are recorded against the other. Pack a second passage with "
+                    "`forge pack`, or drop one of the levels."
+                )
         return self
 
     @classmethod
@@ -729,6 +758,34 @@ class Content:
         return bundle, apply_level_overrides(ruleset, entry.overrides, level_n=n)
 
 
+def _assert_calibrations_exist(levels: Mapping[str, LevelConfig]) -> None:
+    """Every `calibration` a level names must be a bucket set the file defines.
+
+    THE BUG THIS EXISTS FOR: L5 shipped `detector_threshold.calibration = "code"`
+    while `data/assets/thresholds.v1.json` defined only `default`.
+    `load_levels` accepted it — `calibration` is a declared `config_param`, and
+    core has no reason to know which bucket sets were measured — so nothing
+    objected until `ServerDetector.read_tokens` called `load_thresholds(name=...)`
+    at submit time and `parse_thresholds` raised `KeyError`. A 500 on the level's
+    WIN CONDITION, at play, which ARCHITECTURE.md §8 forbids outright.
+
+    It was invisible because L5 is out of the campaign AND is dropped at boot for
+    a missing `unit_tests` dependency — masked by two accidents rather than by
+    design, and one `[[level]]` block away from shipping. So this runs over every
+    ruleset in the file, not only the ones the campaign currently plays.
+
+    `forge verify` carries the same check for CI. This one is the boot half, and
+    it is the half that matters: a config error has to stop the server starting,
+    not wait for the first player to find it.
+    """
+    for level in levels.values():
+        for spec in level.checks:
+            name = spec.params.get("calibration")
+            if name:
+                # Raises KeyError naming the file and the sets it does define.
+                load_thresholds(name=str(name))
+
+
 def load_content(
     data_root: Path, *, asset_bundle_id: str = "", is_production: bool = False
 ) -> Content:
@@ -742,6 +799,7 @@ def load_content(
     # Core merges `[defaults.*]` under each level's own params and validates the
     # result against the registry. It raises at BOOT, never at play (§7.6).
     levels = load_levels(cfg_dir / "levels.toml")
+    _assert_calibrations_exist(levels)
 
     scoring_raw = _read_toml(cfg_dir / "scoring.toml")
     scoring_fields = {k: v for k, v in scoring_raw.items() if k in _SCORING_SCALARS}

@@ -1,5 +1,7 @@
 # Launder WM
 
+Play it: **[launder.sshh.io](https://launder.sshh.io)**
+
 You are given a passage of real watermarked text. Wash the watermark out: edit
 until a real detector stops flagging it, in as few word changes as you can.
 
@@ -27,18 +29,20 @@ read as claiming otherwise.
 
 ## The campaign
 
-Fifteen levels, played in order — clear one and the next unlocks. Later levels
-add rules to the gate: a change budget, a phrase that must survive verbatim,
-meaning clamped to close paraphrase. Progress is anonymous, kept in
-`localStorage` and mirrored on the server against a session id; there are no
-accounts. `?level=N` opens any level directly.
+Eight levels, played in order — clear one and the next unlocks. Each adds one
+pressure you can name: a budget that actually binds, edits confined to the
+opening, a phrase that must survive verbatim, every claim intact, and a floor as
+well as a ceiling on the reading. Progress is anonymous, kept in `localStorage`
+and mirrored on the server against a session id; there are no accounts.
+`?level=N` opens any level directly.
 
 ## Two systems, and they run at different times
 
-* **The watermark detector is local, fast and free, so it runs live.** It is a
-  TypeScript port of the Python detector, debounced on every keystroke. Both
-  implementations are held to the same committed golden vectors, bit for bit, by
-  a CI gate — the browser is a verifier that re-derives what it shows.
+* **Anything closed-form is local, fast and free, so it runs live.** The
+  detector is a TypeScript port of the Python one, and so are the gate's
+  deterministic rules — word count, edit distance, the locked phrase, the
+  editable window, the character check. Every port is held to the same committed
+  golden vectors as its original, bit for bit, by a CI gate.
 * **The LLM judge fires once, on submit, and is a gate, not a score.** It is
   asked whether the submission is natural prose that still makes the passage's
   claims. Pass or fail; nothing to optimize. It closes what a free textarea
@@ -69,21 +73,16 @@ make web-build             # the server renders the built page, not a template
 make serve                 # http://127.0.0.1:8000
 ```
 
-Defaults are chosen so this costs nothing and needs nothing: a local SQLite file
-for the database and a fake judge that always passes. Set `JUDGE_PROVIDER` and a
-key in `.env` for the real one.
-
-For work on the UI alone, `make web-dev` runs the Vite dev server against the
-checked-in fixture passage. It has no API behind it, so play through `make
-serve`.
+Defaults cost nothing and need nothing: a local SQLite file and a fake judge that
+always passes. Set `JUDGE_PROVIDER` and a key in `.env` for the real one. For the
+UI alone, `make web-dev` runs Vite against the checked-in fixture passage — no
+API behind it, so play through `make serve`.
 
 ## More
 
 `.build-docs/TECH_PLAN.md` is the full technical plan — the detector's
 arithmetic, the calibration, the asset budgets, the build. `ARCHITECTURE.md`
-next to it records the decisions and what was rejected.
-
-MIT licensed; see `LICENSE`, and `NOTICE` for what is redistributed and under
-which terms.
+next to it records the decisions and what was rejected. MIT licensed; see
+`LICENSE`, and `NOTICE` for what is redistributed and under which terms.
 
 Made by [@ShrivuShankar](https://x.com/ShrivuShankar).

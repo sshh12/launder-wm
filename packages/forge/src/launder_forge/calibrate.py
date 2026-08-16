@@ -297,7 +297,44 @@ def calibrate(
 def write_thresholds(
     path: Path, curve: ThresholdCurve, *, wm_config_id: str, name: str = "default"
 ) -> dict[str, Any]:
+    """Write the curve into `path`, KEEPING every other calibration in the file.
+
+    `to_json` builds `{"calibrations": {name: ...}}` — a fresh one-entry map —
+    and this used to write it straight over the file. So the one documented way
+    to produce L5's bucket, `forge calibrate --name code --force` (levels.toml:
+    "L5 also gets its own calibration bucket ... its sigma(T) curve and par must
+    be fit separately"), DELETED `calibrations.default`: every other level then
+    booted into `KeyError: calibration bucket set 'default' not found`, and
+    thresholds.v1.json is one of the four inputs to `asset_bundle_id`, so the
+    same command invalidated every packed passage. Bucket sets are additive.
+
+    The scalars every group shares — `fpr`, `z_star`, `depth`, `wm_config_id` —
+    live at the top level and are asserted rather than overwritten: two curves
+    measured against different constants are not two buckets of one file, and
+    core's `_assert_no_shadow` treats a per-group override of them as a config
+    error rather than a knob.
+    """
     payload = curve.to_json(wm_config_id=wm_config_id, name=name)
+    if path.exists():
+        existing: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        for key, mine in (
+            ("fpr", payload["fpr"]),
+            ("z_star", payload["z_star"]),
+            ("depth", payload["depth"]),
+            ("wm_config_id", payload["wm_config_id"]),
+        ):
+            theirs = existing.get(key)
+            if theirs is not None and theirs != mine:
+                raise ValueError(
+                    f"{path} records {key} = {theirs!r} and this run measured {mine!r}. "
+                    f"Every calibration in one thresholds file shares these, so writing "
+                    f"{name!r} here would silently restate {key} for the bucket sets already "
+                    f"in it ({sorted(existing.get('calibrations', {}))}). Re-run the others "
+                    "against the same constants, or write this one to a different file."
+                )
+        merged = dict(existing.get("calibrations") or {})
+        merged.update(payload["calibrations"])
+        payload["calibrations"] = merged
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return payload

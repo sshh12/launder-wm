@@ -39,6 +39,12 @@ const EXPECTED = {
   vocab: 262_144,
   merges: 514_906,
   addedTokens: 6_415,
+  //: sha256 of the committed `.br`. THE ONE DIGEST THIS SCRIPT CAN CHECK: node
+  //: has no blake3, so `brBlake3` below is here to be READ (it is the value
+  //: recorded in data/MANIFEST.json and in watermark.toml's
+  //: `[model].tokenizer_blob_blake3`, and `forge verify` recomputes it in
+  //: Python) while this one is the value this script asserts.
+  brSha256: "08aad23d1435b100008a6d7300ef10b793256d7a2a3fd991bef2ba408ef20c37",
   brBlake3: "93b1631ca1acadb1a7bf3dd0b110e575b31fa25005c5fa5d8e6c29de29e62eb2",
 };
 
@@ -300,11 +306,15 @@ ok(
   reBr.length === br.length && reBr.equals(br),
   `${reBr.length} B in ${(brotliMs / 1000).toFixed(1)} s`,
 );
-ok(
-  "sha256 of the committed .br",
-  createHash("sha256").update(br).digest("hex").length === 64,
-  createHash("sha256").update(br).digest("hex"),
-);
+// A CHECK NAMED FOR A DIGEST THAT ONLY MEASURED A STRING LENGTH. This read
+// `createHash("sha256").update(br).digest("hex").length === 64` and printed the
+// digest beside it — an assertion that is true of every input on every run, on
+// the one line of this file whose name promises the shipped bytes are the bytes
+// we measured. `EXPECTED.brSha256` is that measurement, so a swapped or
+// re-compressed blob (which changes `asset_bundle_id` and invalidates every
+// passage) fails here instead of being printed and waved through.
+const brSha256 = createHash("sha256").update(br).digest("hex");
+ok("sha256 of the committed .br", brSha256 === EXPECTED.brSha256, brSha256);
 
 // the reconstructed spec's normalizer, decoder and pre_tokenizer
 const SPEC_NORMALIZER = { type: "Replace", pattern: { String: " " }, content: "▁" };

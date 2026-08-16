@@ -92,5 +92,26 @@ COPY alembic/ ./alembic/
 # a config-only edit rebuilds one thin layer.
 COPY data/ ./data/
 COPY --from=web /web/dist ./web/dist
+# WHICH BUILD IS THIS. `GET /healthz` is `railway.json`'s `healthcheckPath` —
+# it promotes the deploy — and it reported `"sha": "unknown"` in production,
+# because `Settings.sha` reads RAILWAY_GIT_COMMIT_SHA, then GIT_SHA, then
+# SOURCE_COMMIT, and the running container has none of the three: the service's
+# variables carry no git metadata at all. So the one endpoint whose job is to
+# answer "is the new build live?" could not distinguish the new build from the
+# old one, and "did the deploy land" had to be answered by diffing page content.
+#
+# LAST in the stage, after every COPY, so a new commit invalidates one 0-byte
+# layer instead of the data and dist layers above it.
+#
+# The default is EMPTY, and empty means `/healthz` keeps saying "unknown". That
+# is the honest answer when the sha genuinely is not known, and it is better
+# than a placeholder that looks like a real value — a constant baked into every
+# image would read as an identity while naming the wrong commit forever. The
+# Makefile and CI pass the real one; on Railway this is filled only if the
+# builder is given a GIT_SHA build arg, and the robust Railway answer is a
+# GitHub-connected service, which injects RAILWAY_GIT_COMMIT_SHA per deployment
+# at RUNTIME — first in the list above, no rebuild involved.
+ARG GIT_SHA=""
+ENV GIT_SHA=${GIT_SHA}
 USER 1000:1000
 CMD ["sh", "-c", "uvicorn launder_serve.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --proxy-headers --forwarded-allow-ips '*'"]

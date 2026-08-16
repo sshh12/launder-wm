@@ -263,6 +263,67 @@ describe("reanchorTokens", () => {
   it("is a no-op when the text did not change", () => {
     expect(reanchorTokens(tokens, old, old)).toEqual(tokens);
   });
+
+  /* --- astral characters: the scan counts CODE UNITS ---------------- *
+   * The prefix/suffix scan compares UTF-16 code units, and a boundary that
+   * lands between the two halves of a surrogate pair splits a character the
+   * renderer then puts in two different elements. Surrogate halves do not
+   * shape across an element boundary, so the mirror draws two replacement
+   * boxes where the textarea draws one glyph, and everything to the right of
+   * it on that line is off by the difference. Every emoji in U+1F600..U+1F63F
+   * shares the high surrogate D83D, so swapping one for another is the case,
+   * not an exotic one.
+   * ------------------------------------------------------------------ */
+  const codePointBoundaries = (text: string): Set<number> => {
+    const out = new Set<number>();
+    for (let i = 0; i < text.length; ) {
+      out.add(i);
+      i += (text.codePointAt(i) ?? 0) > 0xffff ? 2 : 1;
+    }
+    out.add(text.length);
+    return out;
+  };
+
+  const assertNoSplitPairs = (text: string, out: readonly TokenHeat[]): void => {
+    const legal = codePointBoundaries(text);
+    for (const t of out) {
+      expect(legal.has(t.s)).toBe(true);
+      expect(legal.has(t.e)).toBe(true);
+    }
+  };
+
+  it("never cuts a surrogate pair when the two emoji share a high surrogate", () => {
+    // U+1F600 and U+1F601: D83D DE00 -> D83D DE01. The common prefix matches
+    // the first unit and stops on the second.
+    const before = "a \u{1F600} b";
+    const after = "a \u{1F601} b";
+    const out = reanchorTokens(wordTokens(before, () => 0.5), before, after);
+    assertNoSplitPairs(after, out);
+    // and the character is inside the dirty span, so it renders as one glyph
+    const dirty = out.find((t) => t.heat === 0);
+    expect(after.slice(dirty?.s ?? 0, dirty?.e ?? 0)).toContain("\u{1F601}");
+  });
+
+  it("never cuts a surrogate pair when the two emoji share a low surrogate", () => {
+    // U+1F600 and U+1FA00: D83D DE00 -> D83E DE00. Here it is the common
+    // SUFFIX that starts mid-pair.
+    const before = "a \u{1F600} b";
+    const after = "a \u{1FA00} b";
+    assertNoSplitPairs(after, reanchorTokens(wordTokens(before, () => 0.5), before, after));
+  });
+
+  it("still reproduces the text exactly across an astral edit", () => {
+    const before = "one \u{1F600}\u{1F601} three";
+    const after = "one \u{1F601}\u{1F601} three";
+    const out = reanchorTokens(wordTokens(before, () => 0.5), before, after);
+    const layout = layoutFromTokens(after, out);
+    let joined = "";
+    for (let i = 0; i < layout.toks.length; i++) {
+      joined += (layout.gaps[i] ?? "") + (layout.toks[i] ?? "");
+    }
+    expect(joined + (layout.gaps[layout.toks.length] ?? "")).toBe(after);
+    assertNoSplitPairs(after, out);
+  });
 });
 
 /* ------------------------------------------------------------------ *

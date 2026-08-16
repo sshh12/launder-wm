@@ -136,3 +136,113 @@ def test_node_check_reports_rather_than_crashes(tmp_repo: Paths, cfg: SynthIDCon
     report = verify_all(tmp_repo, cfg, run_node=True)
     detail = dict((n, d) for n, ok, d in report.checks if n == "ts.parity")["ts.parity"]
     assert "parity" in detail or "node" in detail
+
+
+def test_ts_parity_refuses_to_settle_for_a_script_that_is_not_the_parity_runner(
+    tmp_repo: Paths, cfg: SynthIDConfig
+) -> None:
+    """The candidate list used to fall back to `web/tools/pack-check.mjs`.
+
+    pack-check round-trips the packed tokenizer blob. It never loads the
+    detector, never reads data/golden/vectors.json and never scores a passage —
+    so with `parity.mjs` renamed or deleted, `forge verify` would have run it,
+    seen exit 0 and reported `ts.parity  yes`, and the only check in the repo
+    that can catch a JS/Python divergence would have been passing by not
+    running. Anything but the real runner is now a failure.
+    """
+    tools = tmp_repo.root / "web" / "tools"
+    tools.mkdir(parents=True)
+    # Exits 0 without scoring anything, exactly like a successful pack-check.
+    (tools / "pack-check.mjs").write_text("process.exit(0);\n", encoding="utf-8")
+
+    report = verify_all(tmp_repo, cfg, run_node=True)
+    ok, detail = dict((n, (ok, d)) for n, ok, d in report.checks if n == "ts.parity")["ts.parity"]
+    assert not ok, detail
+    assert "web/tools/parity.mjs" in detail
+    assert "pack-check" not in detail
+
+
+def test_verify_catches_a_stale_expected_z(
+    tmp_repo: Paths, real_paths: Paths, cfg: SynthIDConfig
+) -> None:
+    """§4.5 lists four detector expectations; check 5 recomputed three.
+
+    `expected_z` is the one the BROWSER asserts on load — it recomputes the
+    pristine passage and, on a mismatch, refuses local detection behind a
+    banner. It is also the one that goes stale on its own: it is a function of
+    `data/assets/thresholds.v1.json` as well as of the text, so recalibrating
+    after packing invalidates it while score, n_scored and g_digest all still
+    reproduce.
+    """
+    shipped = sorted(real_paths.passages.glob("*.public.json"))
+    if not shipped:
+        pytest.skip("no packed passage to copy into the temp tree")
+    data = json.loads(shipped[0].read_text(encoding="utf-8"))
+    data["detector"]["expected_z"] += 0.25
+    tmp_repo.ensure(tmp_repo.passages)
+    (tmp_repo.passages / shipped[0].name).write_text(json.dumps(data), encoding="utf-8")
+
+    report = verify_all(tmp_repo, cfg, run_node=False)
+    failed = dict((name, detail) for name, ok, detail in report.checks if not ok)
+    assert "passages.rederived" in failed
+    assert "!= packed" in failed["passages.rederived"]
+
+
+def test_a_level_naming_a_calibration_that_does_not_exist_fails(
+    tmp_repo: Paths, cfg: SynthIDConfig
+) -> None:
+    """L5 named `calibration = "code"`; thresholds.v1.json has only `default`.
+
+    `parse_thresholds` raises `KeyError` on an unknown bucket set, so that was a
+    500 at PLAY on the level's win condition — the failure ARCHITECTURE.md §8
+    says must happen at boot instead. `load_levels` cannot catch it: it checks
+    that params are READ, never that their values name something that exists.
+    The two files have to be read together.
+    """
+    text = tmp_repo.levels_toml.read_text(encoding="utf-8")
+    tmp_repo.levels_toml.write_text(
+        text.replace(
+            '{ check = "detector_threshold", params = { max_z = 0.0 } },',
+            '{ check = "detector_threshold", params = { max_z = 0.0, calibration = "code" } },',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    report = verify_all(tmp_repo, cfg, run_node=False)
+    failed = dict((name, detail) for name, ok, detail in report.checks if not ok)
+    assert "config.calibrations" in failed
+    assert "'code'" in failed["config.calibrations"]
+    assert "['default']" in failed["config.calibrations"]
+
+
+def test_the_shipped_levels_only_name_calibrations_that_exist(
+    tmp_repo: Paths, cfg: SynthIDConfig
+) -> None:
+    report = verify_all(tmp_repo, cfg, run_node=False)
+    named = {name: (ok, detail) for name, ok, detail in report.checks}
+    assert named["config.calibrations"][0], named["config.calibrations"]
+
+
+def test_a_table_digest_that_is_not_recorded_is_a_failure_not_a_skip(
+    tmp_repo: Paths, cfg: SynthIDConfig
+) -> None:
+    """`if k in recorded` made an absent digest silently pass.
+
+    The sampling table is key material and every shipped passage was scored with
+    it. Deleting the four hashes from `[table]` used to leave the check with
+    nothing to compare and the report still read "4 digests match".
+    """
+    text = tmp_repo.watermark_toml.read_text(encoding="utf-8")
+    stripped = "\n".join(
+        line for line in text.splitlines() if not line.startswith(("sha256_", "blake3_"))
+    )
+    tmp_repo.watermark_toml.write_text(stripped + "\n", encoding="utf-8")
+
+    report = verify_all(tmp_repo, cfg, run_node=False)
+    ok, detail = dict((n, (ok, d)) for n, ok, d in report.checks if n == "assets.sampling_table")[
+        "assets.sampling_table"
+    ]
+    assert not ok, detail
+    assert "sha256_packed: not recorded" in detail
+    assert "blake3_unpacked: not recorded" in detail

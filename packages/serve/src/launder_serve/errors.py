@@ -14,6 +14,15 @@ HTTP errors are reserved for real errors:
 Every message a player can see comes from `data/config/copy.toml` `[errors]`,
 never from a string literal in this file — the same rule `gates/feedback.py`
 follows in core. `ApiError.code` is the copy key.
+
+**Every one of them is `Cache-Control: no-store`.** §11.4 gives `/api/detect` and
+`/api/submit` that header and the endpoints set it on their own responses — but
+an `ApiError` never reaches the endpoint's `Response` object: the handler builds
+a fresh `JSONResponse` from `error_payload` plus `err.headers`, so the header was
+dropped on exactly the responses that must not be stored. 404 and 413 are
+heuristically cacheable statuses (RFC 9111 §4.2.2), `GET /` raises `NotFound`
+when there is nothing to render, and there is a CDN in front of this origin
+(§11.4) — a shared cache that pinned one of those would serve it to everybody.
 """
 
 from __future__ import annotations
@@ -48,7 +57,10 @@ class ApiError(Exception):
         self.code = code
         self.message = message
         self.params: dict[str, Any] = dict(params or {})
-        self.headers: dict[str, str] = dict(headers or {})
+        # `no-store` FIRST, so a subclass that genuinely needs another policy has
+        # to say so rather than inherit one by accident. See the module docstring
+        # for why an error response cannot rely on the endpoint's own header.
+        self.headers: dict[str, str] = {"Cache-Control": "no-store", **dict(headers or {})}
 
 
 class NotFound(ApiError):

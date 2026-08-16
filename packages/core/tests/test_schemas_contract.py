@@ -251,10 +251,17 @@ def test_levels_toml_loads_and_orders_its_checks() -> None:
             assert names[-1] == "llm_gate", level.id
             assert names.index("detector_threshold") == len(names) - 2, level.id
 
-    # Deviation #2: L5 drops llm_gate and gets its own calibration bucket.
+    # Deviation #2: L5 drops llm_gate — code has almost no room to say the same
+    # thing a different way, so a meaning judge has nothing to judge.
+    #
+    # It does NOT get its own calibration bucket, and this used to assert that
+    # it did. §7.6 argues for one, but the curve was never measured:
+    # `thresholds.v1.json` defines only `calibrations.default` and
+    # `parse_thresholds` raises `KeyError` on any other name — so naming `code`
+    # made L5's win condition a 500 at PLAY. See levels.toml.
     l5 = by_id["L5"]
     assert "llm_gate" not in [c.check for c in l5.checks]
-    assert l5.param_for("detector_threshold", "calibration") == "code"
+    assert l5.param_for("detector_threshold", "calibration") is None
 
     # defaults merge UNDER the level's own params; the level wins.
     merged = levels.resolved_params(l5, l5.checks[0])

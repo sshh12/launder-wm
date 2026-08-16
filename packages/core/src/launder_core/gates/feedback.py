@@ -23,7 +23,10 @@ Labels vs. blurbs — the distinction this module ENFORCES
 The two lint rules (§10.7), run in CI, at boot and by `forge lint-copy`:
 
 1. Every check name in `REGISTRY` has a `[check.<name>]` block with all three
-   of `label`, `blurb`, `reject`.
+   of `label`, `blurb`, `reject` — AND with every key that check can select at
+   runtime (`GateCheck.copy_keys`, read through `copy_keys_of`). The keys that
+   EXIST are not the keys a check can ASK FOR, and a key it asks for that
+   copy.toml does not have falls back to `reject` without a sound.
 2. Every `{placeholder}` in a template resolves against that check's declared
    params. A renamed param silently blanking a rejection message is exactly the
    bug this catches.
@@ -40,7 +43,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
 
-from launder_core.gates.registry import META_COPY_KEY, META_COPY_TABLE, REGISTRY, GateCheck
+from launder_core.gates.registry import (
+    META_COPY_KEY,
+    META_COPY_TABLE,
+    REGISTRY,
+    GateCheck,
+    copy_keys_of,
+)
 from launder_core.schemas import CheckResult, GateFailure
 
 __all__ = [
@@ -186,7 +195,19 @@ def lint_copy(
                 "levels.toml without writing its copy must fail the build."
             )
             continue
-        for key in _REQUIRED_KEYS:
+        # The three keys every block must carry, PLUS every key this check can
+        # select at runtime through `meta[META_COPY_KEY]`.
+        #
+        # THE SECOND HALF WAS MISSING HERE. `copy_keys_of` exists precisely
+        # because rule 1 checked the keys that EXIST rather than the keys a
+        # check can ASK FOR — `close_paraphrase` emitted `reject_distance` and
+        # `reject_alignment` with neither in copy.toml, so a distance failure
+        # rendered the RETENTION message quoting retention numbers that were
+        # fine. `forge lint-copy` was taught to check it; this function, which
+        # is the BOOT-time half of the same rule (`assert_copy_complete`), was
+        # not — so a server could start clean and then render the wrong
+        # rejection, which is the exact split the two lints exist to close.
+        for key in sorted(set(_REQUIRED_KEYS) | copy_keys_of(check)):
             if key not in block:
                 problems.append(f"rule 1: [check.{name}] has no `{key}`")
 

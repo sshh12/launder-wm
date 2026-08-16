@@ -13,6 +13,8 @@
       "uv.lock",
       "Dockerfile",
       "railway.json",
+      "packages/forge/pyproject.toml",
+      ".dockerignore",
       "alembic.ini",
       "NOTICE"
     ]

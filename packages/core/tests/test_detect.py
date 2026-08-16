@@ -103,6 +103,40 @@ def test_heat_is_the_all_ones_and_all_zeros_extremes() -> None:
     assert 0.0 < float(heat_values(half)[0]) < 1.0
 
 
+def test_heat_and_score_stay_inside_the_unit_interval_at_the_extremes() -> None:
+    """The `[0, 1]` contract, at the two places float arithmetic breaks it.
+
+    `depth_weights` renormalizes so `w.sum()` is exactly `m`, but `g @ w` sums
+    in a different order and an all-ones row lands on `30.000000000000004`, so
+    `heat` read `1.0000000000000002` — and `score`, a floating-point mean of
+    those, exceeded 1 for 73 of the first 400 values of `n_scored` even once
+    heat was clipped. `pytest.approx(1.0)` in the test above could not see
+    either. `TokenHeat.heat` and `DetectorReading.score` are both
+    `Field(ge=0.0, le=1.0)`, so the symptom was a pydantic ValidationError —
+    HTTP 500 on every keystroke — for any passage holding one n-gram whose
+    thirty tournament layers all read 1.
+    """
+    m = 30
+    for rows in (1, 20, 21, 46, 200):
+        ones = np.ones((rows, m), dtype=np.uint8)
+        assert float(heat_values(ones).max()) <= 1.0
+        ones_result = weighted_mean_score(ones)
+        assert float(ones_result.heat.max()) <= 1.0
+        assert ones_result.score <= 1.0
+
+        zeros = np.zeros((rows, m), dtype=np.uint8)
+        assert float(heat_values(zeros).min()) >= 0.0
+        assert weighted_mean_score(zeros).score >= 0.0
+
+    # The bound that actually cost the 500: the wire schema refuses anything
+    # outside [0, 1], and the mirror sends one of these per token.
+    from launder_core.schemas import DetectorReading, TokenHeat
+
+    maximal = weighted_mean_score(np.ones((3, m), dtype=np.uint8))
+    TokenHeat(s=0, e=1, heat=float(maximal.heat[0]))
+    DetectorReading(score=maximal.score, z=0.0, z_star=2.3263, n_scored=3)
+
+
 def test_contributions_reconstruct_the_score_exactly() -> None:
     g = compute_g_values(IDS50)
     result = weighted_mean_score(g)

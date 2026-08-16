@@ -18,6 +18,7 @@
  */
 
 import { renderDiff, words } from "./diff";
+import type { LivePreview } from "./live";
 import { formatPoints, type PointsScale } from "./needle";
 import type { Sheets } from "./primer";
 import type {
@@ -45,6 +46,11 @@ const SYM_PATHS: Record<string, string> = {
   test: "M12 3.4a8.6 8.6 0 1 1 0 17.2 8.6 8.6 0 0 1 0-17.2|M7 12h10",
   dryclean: "M12 3.4a8.6 8.6 0 1 1 0 17.2 8.6 8.6 0 0 1 0-17.2|M9.6 15.6V8.4h2.9a2.2 2.2 0 0 1 0 4.4H9.6",
   floor: "M3.4 20.2h17.2|M12 16.4V4.8|M7.4 9.4 12 4.8l4.6 4.6",
+  // The editable window: a garment panel with only its opening marked out.
+  region: "M3.4 4.4h17.2v15.2H3.4Z|M9.8 4.4v15.2|M5.8 8.6h2|M5.8 12h2|M5.8 15.4h2",
+  // Two rails, not one: `detector_floor` is a bound on BOTH sides, and it sits
+  // beside `detector_threshold`'s drum on the campaign's last level.
+  window: "M3.4 3.6h17.2v16.8H3.4Z|M6.4 8.2h11.2|M6.4 15.8h11.2",
 };
 const CROSS = "M4.4 4.4 19.6 19.6|M19.6 4.4 4.4 19.6";
 /** Unknown check name -> the bleach triangle, so a new REGISTRY key still
@@ -52,14 +58,22 @@ const CROSS = "M4.4 4.4 19.6 19.6|M19.6 4.4 4.4 19.6";
  *  shipping without its own symbol and its own copy. */
 const FALLBACK_SYMBOL = "bleach";
 
-/** One symbol per REGISTRY key (§7.6). Adding a check adds a row here. */
+/** One symbol per REGISTRY key (§7.6). Adding a check adds a row here.
+ *
+ *  A MISSING ROW IS NOT COSMETIC. `FALLBACK_SYMBOL` is the bleach triangle,
+ *  which is also `unicode_sanitation`'s own glyph — so the campaign's last
+ *  level, which runs both of the checks added with the eight-level rewrite,
+ *  drew that triangle three times for three different rules. The pips are the
+ *  whole legibility story on a phone; two rules sharing a glyph erases it. */
 export const CHECK_SYMBOL: Record<string, string> = {
   unicode_sanitation: "bleach",
   word_floor: "floor",
   edit_budget: "dryclean",
+  edit_region: "region",
   locked_phrase: "iron",
   close_paraphrase: "nobleach",
   unit_test: "test",
+  detector_floor: "window",
   detector_threshold: "drum",
   llm_gate: "wash",
 };
@@ -100,6 +114,15 @@ export interface CheckRow {
   label: string;
   blurb: string;
   why: string;
+  /** The rule's own rejection sentence, rendered from the LIVE numbers, and
+   *  only while the rule is failing. Empty otherwise.
+   *
+   *  A red glyph says a rule is broken; it does not say which phrase went
+   *  missing or which word fell outside the opening. That sentence already
+   *  exists in copy.toml — it is what the gate sheet prints after a submission
+   *  — and there is no reason the player should have to spend a submission to
+   *  read it when the browser computed the same numbers a keystroke ago. */
+  detail: string;
 }
 
 export interface GateElements {
@@ -120,6 +143,9 @@ export interface GateElements {
   resultSyms: HTMLElement;
   resultDiff: HTMLElement;
   resultShare: HTMLElement;
+  /** the provisional-clear note; see showResult on why it lives here and not
+   *  only on the gate sheet */
+  resultNote: HTMLElement;
   resultActions: HTMLElement;
   allClear: HTMLElement;
   nextButton: HTMLElement;
@@ -137,6 +163,9 @@ export interface GateOptions {
   par: number | null;
   originalText: string;
   sheets: Sheets;
+  /** the closed-form checks, recomputed on every keystroke. A PREVIEW: the
+   *  moment a `trace` arrives it wins on every row (`statusFor`). */
+  live: LivePreview;
   /** the z -> 0..100 relabelling, so the result's big number and the needle
    *  the player was just watching cannot print different figures */
   points: PointsScale;
@@ -156,12 +185,19 @@ interface Templated {
   symbol: string;
 }
 
+/** How long the copy button holds its confirmation. Long enough to read at a
+ *  glance, short enough that the button is back to being a button before
+ *  anybody wants to press it a second time. */
+const COPIED_MS = 1600;
+
 export class Gate {
   private readonly specs: Templated[];
   private rows: CheckRow[] = [];
+  /** the copy button's resting label, captured the first time it is replaced */
+  private copyLabel: string | null = null;
+  private copyTimer: ReturnType<typeof setTimeout> | null = null;
   private pipSignature = "";
   private trace: CheckResultWire[] | null = null;
-  private reading: Reading | null = null;
   /** the response the open result sheet describes; the advance button needs
    *  its distance and it must not be read from a later submission. */
   private cleared: SubmitResponseWire | null = null;
@@ -224,9 +260,18 @@ export class Gate {
     return merged;
   }
 
-  /** The reading the needle is showing; the only live input to the pips. */
+  /** The reading the needle is showing; the detector rows' live input. */
   setReading(reading: Reading | null): void {
-    this.reading = reading;
+    this.o.live.setReading(reading);
+    this.rebuild();
+    this.renderChanged();
+  }
+
+  /** The player's current text. Every closed-form rule re-answers from it, so
+   *  "Real characters", "At least 50 words", the budget, the opening window and
+   *  the verbatim phrase all move while typing instead of waiting for Check. */
+  setText(text: string): void {
+    this.o.live.setText(text);
     this.rebuild();
     this.renderChanged();
   }
@@ -238,21 +283,29 @@ export class Gate {
     this.rebuild();
   }
 
-  private statusFor(spec: CheckSpecWire): { status: RowStatus; result: CheckResultWire | null } {
+  private statusFor(spec: CheckSpecWire): {
+    status: RowStatus;
+    result: CheckResultWire | null;
+    live: Record<string, string | number> | null;
+  } {
+    // THE SERVER'S TRACE WINS, ALWAYS. It describes the exact text that was
+    // submitted, it is the thing that decided the outcome, and it is the only
+    // source that can speak for `llm_gate`. `main.ts` drops it on the next
+    // keystroke, at which point the live answer takes over again.
     const fromTrace = this.trace?.find((r) => r.check === spec.check) ?? null;
-    if (fromTrace !== null) return { status: fromTrace.status, result: fromTrace };
-    // detector_threshold is the one row the client may show live: it is the
-    // needle's own state under a different glyph, not a verdict of our own.
-    if (spec.check === "detector_threshold" && this.reading !== null) {
-      return { status: this.reading.z <= this.reading.zStar ? "pass" : "fail", result: null };
-    }
-    return { status: "pending", result: null };
+    if (fromTrace !== null) return { status: fromTrace.status, result: fromTrace, live: null };
+    // Otherwise: a closed-form answer if this check has one, and the honest
+    // "Not checked yet" if it does not (`llm_gate`, `unit_test`,
+    // `close_paraphrase` — see live.ts on why that list is what it is).
+    const preview = this.o.live.evaluate(spec);
+    if (preview !== null) return { status: preview.status, result: null, live: preview.params };
+    return { status: "pending", result: null, live: null };
   }
 
   private rebuild(): void {
     this.rows = this.specs.map(({ spec }) => {
-      const { status, result } = this.statusFor(spec);
-      const params = this.paramsFor(spec, result?.params);
+      const { status, result, live } = this.statusFor(spec);
+      const params = this.paramsFor(spec, result?.params ?? live ?? undefined);
       const whyKey =
         status === "pass"
           ? "gate.pass_label"
@@ -261,12 +314,21 @@ export class Gate {
             : status === "error"
               ? "gate.error_label"
               : "gate.pending_label";
+      // Only for a LIVE failure. A server rejection already has a home — the
+      // gate sheet prints it, chosen by `code` (close_paraphrase alone fails
+      // five ways), and repeating a guess at it here would sooner or later
+      // print a different sentence than the one that actually rejected them.
+      const detail =
+        status === "fail" && result === null
+          ? (this.optional(`check.${spec.check}.reject`, params) ?? "")
+          : "";
       return {
         check: spec.check,
         status,
         label: this.o.copy.t(`check.${spec.check}.label`, params),
         blurb: this.o.copy.t(`check.${spec.check}.blurb`),
         why: this.o.copy.t(whyKey),
+        detail,
       };
     });
     this.renderPips();
@@ -289,10 +351,21 @@ export class Gate {
     }
   }
 
-  /** Live words-changed count. `preview_distance` is the SERVER's number
-   *  (§9.2) — the client asserts nothing about distance. */
+  /** Live words-changed count.
+   *
+   *  It comes off the SAME backtrace `edit_budget` reads, not off the reading's
+   *  `preview_distance`. Two reasons. It is instant rather than debounced
+   *  behind a detector round trip; and on a budgeted level the counter and the
+   *  budget pip are now one number computed once, so the screen can never show
+   *  "5 changed" beside a red "Budget 6 words". `edit_budget.py` was written to
+   *  guarantee exactly that property server-side — "if this check ever grows
+   *  its own distance function, the first bug report will be 'it says 12 but it
+   *  rejected me at 12'" — and the browser had a second number all along.
+   *
+   *  §8.3 is unchanged: the distance that is persisted, ranked and shared is
+   *  the server's recomputation, and it arrives in `SubmitResponse.score`. */
   private renderChanged(): void {
-    const d = this.reading?.previewDistance ?? 0;
+    const d = this.o.live.distance();
     const text =
       d === 0
         ? this.o.copy.t("readout.distance_zero")
@@ -309,7 +382,7 @@ export class Gate {
       const wrap = doc.createElement("div");
       wrap.className = "check";
       const id = `${box.id}-x${index}`;
-      const hasBlurb = r.blurb !== "";
+      const hasBlurb = r.blurb !== "" || r.detail !== "";
       const row = doc.createElement(hasBlurb ? "button" : "div");
       row.className = "checkrow";
       if (hasBlurb && row instanceof HTMLButtonElement) {
@@ -339,7 +412,21 @@ export class Gate {
         body.className = "cx";
         body.id = id;
         body.hidden = true;
-        body.textContent = r.blurb;
+        // The live reason FIRST, then the standing explanation. Somebody who
+        // opened a red rule wants to know what they just did, not what the
+        // rule is for; somebody who opened a green one only ever sees the
+        // second paragraph, which is the row this markup has always drawn.
+        if (r.detail !== "") {
+          const why = doc.createElement("p");
+          why.className = "cxwhy";
+          why.textContent = r.detail;
+          body.appendChild(why);
+        }
+        if (r.blurb !== "") {
+          const blurb = doc.createElement("p");
+          blurb.textContent = r.blurb;
+          body.appendChild(blurb);
+        }
         wrap.appendChild(body);
       }
       box.appendChild(wrap);
@@ -391,6 +478,15 @@ export class Gate {
   showResult(res: SubmitResponseWire, submittedText: string): void {
     const { els, copy } = this.o;
     this.cleared = res;
+    // A sheet that opens showing "Copied" is describing a copy that has not
+    // happened. Reachable whenever a level is cleared inside the confirmation
+    // window of the previous one.
+    if (this.copyTimer !== null) {
+      clearTimeout(this.copyTimer);
+      this.copyTimer = null;
+      els.copyButton.textContent = this.copyLabel ?? els.copyButton.textContent;
+      els.copyButton.removeAttribute("data-done");
+    }
     const distance = res.score.distance;
     els.resultTop.textContent = copy.t("readout.cleared_toast", { distance });
     els.resultBig.textContent = formatPoints(res.detector.z, this.o.points);
@@ -398,10 +494,27 @@ export class Gate {
     const par = this.optional("screen.par_label", { par: this.o.par ?? 0 });
     els.resultSub.textContent = par !== null && this.o.par !== null ? `${sub} · ${par}` : sub;
 
+    // "Gate unavailable — this one does not count." THIS is the sheet where
+    // `provisional` can actually be true: `run_gate` returns `provisional=False`
+    // on every rejection, so the copy of this note on #gatesheet is unreachable
+    // and this was the only outcome that could need it — with nowhere to put it.
+    // A provisional clear therefore looked exactly like a real one while the
+    // client skipped `markCleared` and the cookie behind the player's back, and
+    // they returned to find the level uncleared and unexplained.
+    els.resultNote.textContent = res.provisional ? copy.t("readout.provisional_note") : "";
+    els.resultNote.hidden = !res.provisional;
+
+    // EACH ROW'S OWN STATUS, not a hardcoded "pass". A clear is not proof that
+    // every check passed: `run_gate` clears PROVISIONALLY when a fail-open check
+    // returns `status="error"` — the judge unreachable, or the daily spend cap
+    // hit — and the errored row is exactly the one the care label must not draw
+    // as a tick. `setOutcome` has already merged the server's trace into
+    // `this.rows` by the time this runs (main.ts calls it first), and `.sym`
+    // has a `data-s="error"` treatment for precisely this state.
     while (els.resultSyms.firstChild) els.resultSyms.removeChild(els.resultSyms.firstChild);
-    for (const { spec } of this.specs) {
+    for (const row of this.rows) {
       els.resultSyms.appendChild(
-        symbolSvg(this.o.doc, CHECK_SYMBOL[spec.check] ?? FALLBACK_SYMBOL, "pass"),
+        symbolSvg(this.o.doc, CHECK_SYMBOL[row.check] ?? FALLBACK_SYMBOL, row.status),
       );
     }
 
@@ -425,14 +538,54 @@ export class Gate {
     this.o.sheets.open(els.resultSheet.id);
   }
 
+  /**
+   * Copy the share, and SAY SO.
+   *
+   * A button that does its whole job silently reads as a broken button, and
+   * this one is pressed at the only moment the game asks for something back —
+   * the end of the campaign, where the four-line score card is the entire
+   * reward. The button's own label carries the confirmation rather than a
+   * toast: it is already the thing under the player's finger, it needs no new
+   * furniture at the bottom of a sheet that is short on room on a phone, and it
+   * cannot be missed by someone who is looking at what they just tapped.
+   *
+   * On failure the text is SELECTED instead. A denied clipboard permission is
+   * not a game failure and must not be reported as one, but leaving the player
+   * with nothing is how a share gets abandoned; a selection is one keystroke
+   * from the same result.
+   */
   private async copyShare(): Promise<void> {
     const text = this.o.els.resultShare.textContent ?? "";
     if (text === "") return;
     try {
       await navigator.clipboard?.writeText(text);
+      this.flashCopied();
     } catch {
-      /* clipboard permission is not a game failure */
+      this.selectShare();
     }
+  }
+
+  private flashCopied(): void {
+    const button = this.o.els.copyButton;
+    const done = this.optional("screen.copied_label");
+    if (done === null) return; // no key, no invented string (§10.7)
+    if (this.copyLabel === null) this.copyLabel = button.textContent ?? "";
+    button.textContent = done;
+    button.setAttribute("data-done", "1");
+    if (this.copyTimer !== null) clearTimeout(this.copyTimer);
+    this.copyTimer = setTimeout(() => {
+      button.textContent = this.copyLabel ?? "";
+      button.removeAttribute("data-done");
+      this.copyTimer = null;
+    }, COPIED_MS);
+  }
+
+  private selectShare(): void {
+    const range = this.o.doc.createRange();
+    range.selectNodeContents(this.o.els.resultShare);
+    const selection = this.o.doc.defaultView?.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
   }
 
   currentRows(): readonly CheckRow[] {

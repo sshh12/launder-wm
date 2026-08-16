@@ -20,6 +20,7 @@ to get subtly different and are therefore pinned by the shared contract suite:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from datetime import date, datetime
 
 from launder_serve.repo.protocol import (
@@ -37,6 +38,32 @@ __all__ = [
 ]
 
 
+#: The columns `SqlSubmissionRepo.record`'s `ON CONFLICT DO UPDATE` actually
+#: writes on a duplicate `(level_n, text_hash)`. Everything NOT named here —
+#: `created_at`, `passage_id`, `level_id`, `text`, `session_id`,
+#: `scoring_version`, `wm_config_id` — belongs to the FIRST insert and the SQL
+#: statement leaves it alone.
+#:
+#: This list exists because `record()` here replaced the whole row instead, and
+#: `created_at` is the leaderboard's tie-break: `best_for_level` orders by
+#: (distance asc, created_at asc), so a player resubmitting identical text moved
+#: to the BACK of a tie under the memory repo and stayed where they were under
+#: the SQL one. One suite runs against both, and it could not see the difference
+#: because every record it wrote carried the same timestamp.
+_UPSERT_FIELDS: tuple[str, ...] = (
+    "cleared",
+    "provisional",
+    "distance",
+    "ops",
+    "detector_score",
+    "detector_z",
+    "n_scored",
+    "masked_fraction",
+    "failure_code",
+    "elapsed_ms",
+)
+
+
 class MemorySubmissionRepo:
     def __init__(self) -> None:
         self._rows: dict[tuple[int, str], SubmissionRecord] = {}
@@ -45,7 +72,13 @@ class MemorySubmissionRepo:
     async def record(self, s: SubmissionRecord) -> None:
         key = (s.level_n, s.text_hash)
         async with self._lock:
-            self._rows[key] = s
+            existing = self._rows.get(key)
+            if existing is None:
+                self._rows[key] = s
+                return
+            self._rows[key] = dataclasses.replace(
+                existing, **{name: getattr(s, name) for name in _UPSERT_FIELDS}
+            )
 
     async def best_for_level(self, level_n: int, limit: int) -> list[LeaderRow]:
         rows = [
@@ -81,7 +114,24 @@ class MemoryJudgeCacheRepo:
         return self._rows.get(key)
 
     async def put(self, key: str, v: CachedVerdict) -> None:
-        self._rows[key] = v
+        existing = self._rows.get(key)
+        if existing is None:
+            self._rows[key] = v
+            return
+        # Same rule as `MemorySubmissionRepo.record`: `SqlJudgeCacheRepo.put`'s
+        # `ON CONFLICT DO UPDATE` writes only these five columns, so the
+        # provider, the model and the token counts belong to the call that first
+        # produced this key. Replacing the whole row here made `stats()` report
+        # the LAST write's token counts on one implementation and the FIRST
+        # write's on the other, for the same sequence of calls.
+        self._rows[key] = dataclasses.replace(
+            existing,
+            cleared=v.cleared,
+            failure_code=v.failure_code,
+            feedback=v.feedback,
+            observation=v.observation,
+            created_at=v.created_at,
+        )
 
     async def purge_version(self, judge_version: str) -> int:
         doomed = [k for k, v in self._rows.items() if v.judge_version == judge_version]

@@ -217,12 +217,13 @@ the same image.
 stripping bytecode and paying cold-start would get within reach. That is a
 plan-level decision §2.3 has not made.
 
-## 15. A 15-level campaign, not a daily
+## 15. An 8-level campaign, not a daily
 
-**Decision.** The game is a linear campaign: levels 1..15, played in order, each
+**Decision.** The game is a linear campaign: levels 1..8, played in order, each
 unlocked by clearing the one before it. `data/config/progression.toml` maps each
-level `n` to a `passage_id` and to a ruleset id from `data/config/levels.toml`
-(`L1..L6`, unchanged). Dates, days, puzzle numbers, the UTC rollover, streaks
+level `n` to a `passage_id`, to a ruleset id from `data/config/levels.toml`, and
+to the per-level param `overrides` that make that level's bound bind on *its*
+passage. Dates, days, puzzle numbers, the UTC rollover, streaks
 and the per-day leaderboard are gone, not hidden — `data/config/schedule.toml`,
 `GET /api/daily`, `GET /api/leaderboard/{day}` and the `daily_slot` table were
 deleted outright. `submission.day` became `submission.level_n`.
@@ -232,8 +233,8 @@ play, and it pays for that retention with a hard content treadmill: one authored
 passage per day forever, on a GPU only the author has (§12). What this game
 actually needs is the opposite — a difficulty ramp, because the skill (read for
 optionality, cut upstream of a hot run) is not learnable from one passage in
-isolation. Fifteen ordered passages, L1 → L4 with the detector's `expected_z`
-climbing inside each group, teach it. A daily also forces a "come back tomorrow"
+isolation. Eight ordered levels, each adding exactly one nameable pressure,
+teach it. A daily also forces a "come back tomorrow"
 dead end on the one visitor this project cares about: the skeptic who arrived
 from a link, wants to check the detector is honest, and has ten minutes.
 
@@ -253,6 +254,53 @@ writes no cookie), which is what tests and demos actually needed from a grid.
 **Revisit if.** The campaign is cleared faster than passages can be authored. A
 second season is more `[[level]]` blocks and more passages; it is not a
 schedule.
+
+---
+
+## 16. Every closed-form rule answers while you type
+
+**Decision.** `web/src/game/live.ts` recomputes seven of the ten gate checks on
+every keystroke — `unicode_sanitation`, `word_floor`, `edit_budget`,
+`edit_region`, `locked_phrase`, `detector_threshold`, `detector_floor` — and the
+pips render those answers. The other three (`llm_gate`, `unit_test`,
+`close_paraphrase`) keep the "Not checked yet" state, which is what makes that
+state mean something. The server's `trace` overrides every live answer the moment
+it exists, and nothing here is persisted, ranked or shared (§8.3 is unchanged).
+
+**Why.** These are functions of text the browser is already holding, and they
+were being reported by a network round trip that also spends money on a language
+model. "At least 50 words" was decided in microseconds and delivered a second
+and a half later, after a button press, next to a gate rejection. Worse, one
+level's entire distinguishing rule was invisible: the "Verbatim phrase" level
+never named its phrase, so nothing on screen moved when the player broke it and
+the only way to learn which phrase was locked was to lose a submission. A
+constraint the player can watch is a mechanic; a constraint discovered only on
+rejection is a bug report — which `close_paraphrase.py` had already written down
+about its own metrics.
+
+**The port that is data, not code.** Three of the four mechanisms in
+`unicode_sanitation` transcribe. The homoglyph predicate does not: Python gates
+on `ch.isalpha() or ch.isdigit()`, and `str.isdigit()` is `Numeric_Type ∈ {Digit,
+Decimal}`, which no JavaScript `\p{...}` escape names. The closest approximations
+disagree on 41 real codepoints. **A browser stricter than the gate is worse than
+a browser that checks nothing** — it paints a rule red and then the submission
+clears — so the TS ships the exact domain of `homoglyph_target` as 117 encoded
+ranges, and `test_unicode_ts_tables.py` re-derives it by scanning all of Unicode
+in Python and prints the replacement when it drifts.
+
+**One distance function, on both sides of the wire.** The "N changed" counter now
+reads the same Damerau backtrace `edit_budget` does, rather than the reading's
+`preview_distance`. It is instant instead of debounced, and the screen can no
+longer show "5 changed" beside a red "Budget 6 words".
+
+**Rejected: porting `close_paraphrase` too.** It is portable — its own docstring
+calls the client a port target — but it needs `lemma.v1.tsv`, `stopwords.v1.txt`
+and the suffix rules, and a fence that renders green in the browser and red on
+the server costs more trust than the latency it saves.
+
+**Revisit if.** A check is added whose client and server answers can diverge. The
+rule is that a live answer must be *provably* the gate's answer, pinned by a
+test that fails on drift — not merely believed to be.
 
 ---
 

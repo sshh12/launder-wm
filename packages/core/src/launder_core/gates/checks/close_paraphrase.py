@@ -47,7 +47,7 @@ from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from typing import Any, ClassVar, Final
 
-from launder_core.gates.feedback import data_dir
+from launder_core.gates.feedback import CopyError, data_dir
 from launder_core.gates.registry import (
     META_COPY_KEY,
     GateConfigError,
@@ -221,10 +221,19 @@ def _load_tables() -> tuple[frozenset[str], dict[str, str]] | None:
     Returning `None` rather than raising is the fallback path, and it is only
     reachable when `data/` is genuinely absent — in which case the module-level
     dicts, which `assert_tables_match_files()` pins to the files, are used.
+
+    THE EXCEPTION LIST IS THE WHOLE POINT. This caught `FileNotFoundError`,
+    which is what `launder_core.watermark.config.data_dir` raises — but the
+    `data_dir` imported here is `gates.feedback`'s, and that one raises
+    `CopyError` (a plain `RuntimeError`) both when it cannot find `data/` and
+    when `LAUNDER_DATA_DIR` points somewhere without a `config/` in it. So the
+    fallback path was unreachable: in exactly the bare venv §2.1 promises to
+    support, `lemma()` and `stopwords()` raised `CopyError` instead of using the
+    in-code tables they exist for.
     """
     try:
         root = data_dir()
-    except FileNotFoundError:
+    except (CopyError, FileNotFoundError):
         return None
     lemma_path = root / LEMMA_TABLE_PATH
     stop_path = root / STOPWORDS_PATH

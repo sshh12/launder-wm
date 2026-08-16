@@ -88,6 +88,36 @@ def test_a_check_with_no_copy_fails_the_build() -> None:
         assert_copy_complete(book(), registry)
 
 
+def test_a_copy_key_a_check_can_select_but_copy_toml_lacks_fails_the_build() -> None:
+    """Rule 1 checked the keys that EXIST, not the keys a check can ASK FOR.
+
+    `close_paraphrase` emitted `reject_distance` and `reject_alignment` with
+    neither in copy.toml, so a distance failure rendered the RETENTION message —
+    quoting retention numbers that were fine — and the lint said OK. `forge
+    lint-copy` was taught to read `copy_keys`; `lint_copy`/`assert_copy_complete`
+    here, which are the BOOT-time half of the same rule, were not, so a server
+    could start clean and still render the wrong rejection.
+    """
+
+    class Fussy:
+        name = "word_floor"  # borrow a name that HAS a block, so only the key is missing
+        phase = 10
+        fail_open = False
+        config_params: frozenset[str] = frozenset({"min_words"})
+        required_params: frozenset[str] = frozenset({"min_words"})
+        template_params: frozenset[str] = frozenset({"min_words", "n_words"})
+        copy_keys: frozenset[str] = frozenset({"reject", "reject_all_deleted"})
+
+        def __call__(self, ctx: Any, params: Any) -> CheckResult:  # pragma: no cover
+            raise NotImplementedError
+
+    registry: dict[str, GateCheck] = {"word_floor": Fussy()}  # type: ignore[dict-item]
+    problems = lint_copy(book(), registry)
+    assert any("reject_all_deleted" in p for p in problems), problems
+    with pytest.raises(CopyError, match="reject_all_deleted"):
+        assert_copy_complete(book(), registry)
+
+
 def test_copy_for_a_check_that_no_longer_exists_also_fails() -> None:
     """The converse of rule 1. A misspelled block name means the REAL check has
     no copy, and without this the misspelling looks like extra documentation."""

@@ -118,17 +118,26 @@ tok-pack:
 gen:
 	$(FORGE) gen --n 400 --batch 48
 
+# The three authoring commands that read a FILE rather than the whole tree, so
+# each takes an argument. They used to be spelled without one and could not run
+# at all: `make analyze` exited 2 on a missing `candidates` argument, and the
+# help text above still advertised them as if they worked. CANDIDATES / TEXT /
+# POLICY are overridable on the command line — `make solve TEXT=data/dev/passage.txt`.
+CANDIDATES ?= data/candidates/latest.jsonl
+TEXT       ?= data/dev/passage.txt
+POLICY     ?= data/config/triage/L2.toml
+
 .PHONY: analyze
 analyze:
-	$(FORGE) analyze
+	$(FORGE) analyze $(CANDIDATES)
 
 .PHONY: solve
 solve:
-	$(FORGE) solve --max-edits 10
+	$(FORGE) solve $(TEXT) --max-edits 10
 
 .PHONY: triage
 triage:
-	$(FORGE) triage --policy data/config/triage/L2.toml --report
+	$(FORGE) triage --in $(CANDIDATES) --policy $(POLICY) --report
 
 .PHONY: calibrate
 calibrate:
@@ -206,15 +215,41 @@ web-test:
 	cd web && npm run test
 
 # --- docker (the same image Railway builds) ---------------------------------
+#
+# THESE ARE THE SAME THREE ASSERTIONS .github/workflows/ci.yml MAKES, spelled
+# the same way. Two of them used to be spelled differently here, and both of the
+# local spellings were broken:
+#
+#   * `pip list | grep -i torch` reported the SYSTEM python's packages. The venv
+#     has no pip in it, so the command printed nothing whatever the venv
+#     contained and the leading `!` turned that empty output into a pass — the
+#     "no torch in the image" gate could not see the thing it was gating. It
+#     looks at /app/.venv directly now, and then proves the path it listed is a
+#     REAL venv, because `ls` of a typo'd directory is also empty.
+#   * `docker image inspect --format '{{.Size}}'` means different things on
+#     different daemons: the COMPRESSED content-store size under the containerd
+#     snapshotter, the uncompressed total under overlay2 — 135 MB here and
+#     584 MB in CI for one image. It also only PRINTED a number under a heading
+#     claiming a 250 MB budget, comparing it to nothing. `du -sm /` is the same
+#     number everywhere; the ceiling is 400 MB and the gap to §2.3's 250 MB
+#     target is a warning, exactly as CI has it.
 .PHONY: docker
 docker:
-	docker build -t launder:ci .
+	docker build -t launder:ci --build-arg GIT_SHA=$$(git rev-parse HEAD) .
+	@echo "--- asserting the image knows which commit it is ---"
+	docker run --rm --entrypoint sh launder:ci -c 'test -n "$$GIT_SHA"'
 	@echo "--- asserting no .env in the image ---"
 	! docker run --rm launder:ci sh -c 'ls -a /app | grep -qE "^\.env"'
 	@echo "--- asserting no torch in the venv ---"
-	! docker run --rm launder:ci sh -c 'pip list 2>/dev/null | grep -i torch'
-	@echo "--- image size (budget: 250 MB) ---"
-	docker image inspect launder:ci --format '{{.Size}}'
+	! docker run --rm --entrypoint sh launder:ci -c 'ls /app/.venv/lib/python3.12/site-packages' | grep -iE '^torch'
+	docker run --rm --entrypoint sh launder:ci -c 'ls -d /app/.venv/lib/python3.12/site-packages/launder_core-*.dist-info >/dev/null'
+	@echo "--- asserting no answer keys in the image ---"
+	! docker run --rm launder:ci sh -c 'ls /app/data/passages 2>/dev/null | grep -q "author.json"'
+	@echo "--- image rootfs (ceiling 400 MB; TECH_PLAN §2.3 target 250 MB) ---"
+	@SIZE_MB=$$(docker run --rm --entrypoint sh launder:ci -c 'du -sm / 2>/dev/null | tail -1 | cut -f1'); \
+	echo "image rootfs: $$SIZE_MB MB"; \
+	test "$$SIZE_MB" -le 400 || { echo "image over the 400 MB ceiling: $$SIZE_MB MB"; exit 1; }; \
+	test "$$SIZE_MB" -le 250 || echo "WARNING: above TECH_PLAN §2.3's 250 MB target"
 
 .PHONY: clean
 clean:

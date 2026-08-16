@@ -1,6 +1,15 @@
 # data/passages/
 
-The fifteen campaign passages, `p01` .. `p15`. Each one is three files:
+The fifteen AUTHORED passages, `p01` .. `p15`. The campaign runs **eight** of
+them (`p01`, `p11`, `p10`, `p03`, `p13`, `p15`, `p12`, `p14`, in that order);
+the other seven are spares, and that is deliberate rather than a packaging
+mistake — a passage costs a GPU run and gated weights, so the ones the campaign
+does not use stay packed and verified, ready for a second season or for
+replacing a level whose puzzle turns out to be scriptable. Nothing derives the
+campaign from this directory: `forge verify` and `web/tools/parity.mjs`
+re-derive every file here (more coverage is free), while the level count the
+player is shown, and every rule they are held to, come from
+`data/config/progression.toml`. Each passage is three files:
 `<id>.public.json` (shipped), `<id>.server.json` (claims + par, shipped) and
 `<id>.author.json` (**the answer key — repo only, never served, excluded from
 the image by `.dockerignore` and refused by the `/data/passages` mount**).

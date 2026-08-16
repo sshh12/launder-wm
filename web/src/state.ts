@@ -164,6 +164,10 @@ export interface Boot {
   /** the campaign's length, always rendered next to `level_n`. */
   level_count: number;
   passage_id: string;
+  /** the passage's `rules.locked_phrases`, so `locked_phrase` can be answered
+   *  live. Absent on a payload from an older server; the live check then
+   *  declines to answer rather than reporting a green pip it cannot justify. */
+  locked_phrases?: string[];
   level: LevelWire;
   par: number | null;
   asset_bundle_id: string;

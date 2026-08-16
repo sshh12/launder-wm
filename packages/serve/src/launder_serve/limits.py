@@ -57,6 +57,18 @@ SHARED_BUCKET_KEY: Final[str] = "__no_real_ip__"
 #: spray of forged IPs cannot grow the dict without limit.
 _MAX_BUCKETS: Final[int] = 20_000
 
+#: Longest bucket key we will store. The value is an ADDRESS: the longest legal
+#: textual IPv6 is 45 characters and a bracketed form with a port is 53, so 64 is
+#: generous for anything that is really an IP and short for anything that is not.
+#:
+#: `_MAX_BUCKETS` bounded how MANY buckets exist and nothing bounded how BIG a
+#: key was, and the key is a request header, i.e. attacker-controlled: 20,000
+#: buckets holding a 16 KB header value each (h11's per-header ceiling) is ~320 MB
+#: of dict on a service sized at 0.4 GB (§11.4). Truncating collapses long forged
+#: values together, which is the same policy `SHARED_BUCKET_KEY` already applies
+#: to a caller we cannot identify.
+_MAX_KEY_CHARS: Final[int] = 64
+
 
 def client_key(
     headers: Mapping[str, str],
@@ -70,7 +82,7 @@ def client_key(
         raw = (headers.get(fallback_header) or headers.get(fallback_header.lower()) or "").strip()
         # X-Forwarded-For is a list; the client is the first entry.
         value = raw.split(",")[0].strip()
-    return value or SHARED_BUCKET_KEY
+    return value[:_MAX_KEY_CHARS] or SHARED_BUCKET_KEY
 
 
 @dataclass(frozen=True)

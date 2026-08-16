@@ -258,6 +258,45 @@ def test_buckets_are_sorted_on_load_and_duplicates_rejected() -> None:
         )
 
 
+def test_a_measured_bucket_is_reproduced_at_the_files_own_depth() -> None:
+    """`kappa` is a RATIO against the closed form, and the closed form has an
+    `m` in it — so the `m` on the bucket and the `m` on the curve have to be the
+    same one.
+
+    `CalibrationBucket.kappa` hardcoded 30 while `Calibration.sigma` divided by
+    `sigma_closed_form(T, self.depth)`, so the two only cancelled while the
+    thresholds file said `depth = 30`. Any other depth silently replaced a
+    MEASURED sigma with `sigma * sqrt(30/depth)`, which is the one thing a
+    measured bucket may never mean.
+    """
+    doc = _thresholds_doc([{"n_scored": 100, "sigma": 0.01, "n_samples": 20000}])
+    doc["depth"] = 15
+    cal = parse_thresholds(doc, name="default", source="empirical:test")
+    assert cal.depth == 15
+    assert cal.sigma(100) == pytest.approx(0.01, rel=1e-15)
+    assert cal.z(0.52, 100) == pytest.approx(0.02 / 0.01, rel=1e-15)
+    # ...and the shipped depth still behaves exactly as before.
+    at30 = parse_thresholds(
+        _thresholds_doc([{"n_scored": 100, "sigma": 0.01, "n_samples": 20000}]),
+        name="default",
+        source="empirical:test",
+    )
+    assert at30.sigma(100) == pytest.approx(0.01, rel=1e-15)
+
+
+def test_a_calibration_with_no_buckets_carries_the_weighting_factor_not_one() -> None:
+    """The field comment said "NOT 1.0 for the shipped detector" three lines
+    above a default of 1.0. Both constructors in the module passed
+    `weighting_kappa` explicitly, so the shipped paths were right and the
+    default was loaded for the next caller: `Calibration(depth=30)`, the obvious
+    spelling of "the fallback curve", reinstated the 5-11% overstatement."""
+    assert Calibration().kappa(200) == pytest.approx(weighting_kappa(30), abs=0.0)
+    assert Calibration(depth=12).kappa(200) == pytest.approx(weighting_kappa(12), abs=0.0)
+    assert Calibration().sigma(200) == pytest.approx(sigma_weighted_closed_form(200, 30), rel=1e-15)
+    # An explicit value still wins — that is what makes it a knob.
+    assert Calibration(base_kappa=1.0).kappa(200) == 1.0
+
+
 def test_a_bucket_without_a_measurement_is_rejected() -> None:
     doc = _thresholds_doc([{"n_scored": 100, "n_samples": 20000}])
     with pytest.raises(ValueError, match="neither 'sigma' nor 'score_at_fpr'"):

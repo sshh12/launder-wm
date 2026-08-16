@@ -9,7 +9,7 @@ bails out of `upgrade()` when `assets` is falsy, the entire TypeScript detector,
 the worker, the IndexedDB cache and the parity gate that guards them were dead
 code at runtime, and the level's passage was never delivered to the client at all.
 
-The four regions, and why each one is here rather than in a fetch:
+The five regions, and why each one is here rather than in a fetch:
 
 1. `LAUNDER:BOOT` — the level, the detector expectation, the pristine reading,
    the generated primer demo, the intro's prefix_z, the asset URLs and
@@ -29,6 +29,9 @@ The four regions, and why each one is here rather than in a fetch:
    server-rendered first paint disagrees with the first client repaint — and
    `data-below` must reach the SAME SIX elements `needle.ts` marks, or the two
    paints disagree about which side of the line the reading is on.
+5. `og:url` / `rel="canonical"` — the share card's and the search index's idea
+   of where this page lives. See `render_origin`; it is the one region applied
+   per REQUEST rather than per level.
 
 Every substitution asserts it matched exactly once. A build whose markup drifted
 must fail loudly here, not ship a page that silently renders the fixture again.
@@ -68,6 +71,8 @@ __all__ = [
     "format_points",
     "points",
     "render_index",
+    "render_origin",
+    "safe_origin",
 ]
 
 _log = logging.getLogger("launder.boot")
@@ -249,6 +254,16 @@ def build_boot_payload(
         "level_n": level_n,
         "level_count": content.level_count,
         "passage_id": public.id,
+        # The phrases `locked_phrase` resolves through `passage.rules.locked_phrases`.
+        #
+        # NOT A SECRET, and it was never treated as one: each phrase is a literal
+        # substring of the passage sitting in the textarea, and the rejection
+        # message renders it back verbatim ("The phrase is AUTHORED DATA, not
+        # player text, so rendering it back is safe" — locked_phrase.py). Sending
+        # it here is what lets the browser answer the rule live, which is the
+        # only way a player learns WHICH phrase is locked without first losing a
+        # submission to find out.
+        "locked_phrases": list(public.rules.locked_phrases),
         "level": _level_wire(ruleset),
         "par": bundle.par,
         "asset_bundle_id": content.asset_bundle_id,
@@ -319,7 +334,13 @@ def render_index(
     payload: dict[str, Any],
     passage_text: str,
 ) -> str:
-    """Rewrite the four regions. Raises `MissingRegion` if any does not match."""
+    """Rewrite the four LEVEL-dependent regions.
+
+    The fifth — `og:url` and `canonical` — is `render_origin`, and it is
+    deliberately not here: everything this function writes is a function of the
+    level and is therefore safe to cache, while that one is a function of the
+    request. Raises `MissingRegion` if any region does not match exactly once.
+    """
     expected_z = float(payload["detector"]["expected_z"])
     z_star = float(payload["detector"]["z_star"])
     below = expected_z <= z_star
@@ -410,6 +431,74 @@ def render_index(
     return html
 
 
+# ---------------------------------------------------------------------------
+# the fifth region: where this page says it lives
+# ---------------------------------------------------------------------------
+
+#: A scheme and an authority, and nothing else. Deliberately narrower than the
+#: URL grammar: no path, no query, no userinfo, no IPv6 literal in brackets.
+#: This is not a parser, it is an ALLOW-LIST, and what it is protecting against
+#: is that `Host` is an attacker-supplied header which we are about to write
+#: back into an HTML attribute. A hostname that cannot contain a quote, a `<`,
+#: a space or a `/` needs no escaping, which is a much shorter argument to check
+#: than "is our escaping correct". A host this rejects — an IPv6 literal, a
+#: hostile string, an empty header — falls back to the relative "/" the template
+#: already carries, which is wrong for a crawler but wrong in the harmless
+#: direction.
+_ORIGIN_RE = re.compile(r"^https?://[A-Za-z0-9._~-]+(?::\d{1,5})?$")
+
+
+def safe_origin(scheme: str, host: str) -> str:
+    """`https://launder.sshh.io` from a request's scheme and Host, or `""`.
+
+    `""` means "do not claim an origin", and `render_origin` then leaves the
+    relative URL in place. That is the right failure: the alternative — falling
+    back to a hardcoded production domain — is exactly the bug this whole path
+    exists to avoid, because it would make every preview deploy and every
+    localhost run advertise production in its share card.
+    """
+    candidate = f"{scheme}://{host}"
+    return candidate if _ORIGIN_RE.match(candidate) else ""
+
+
+def render_origin(html: str, origin: str) -> str:
+    """Point `og:url` and `rel="canonical"` at `origin`, or leave them relative.
+
+    **Why this is not part of `render_index`.** The other four regions depend
+    only on the level, so `BootRenderer` renders them once and caches the page;
+    the pristine reading behind them costs a tokenize plus a score. This one
+    depends on the request's `Host` header, which nothing stops a client from
+    varying on every hit. Baking it into the cached HTML would mean either
+    keying the cache on that header — a free way to make every request re-score
+    a passage — or serving one visitor's hostname to the next. So the expensive
+    render stays origin-free and this substitution runs per request, on a string
+    that is already in memory, twice.
+
+    **Why it runs even when `origin` is empty.** It writes `"/"` over `"/"`,
+    which is a no-op — but it still asserts that both attributes are there and
+    that each is there exactly once. Skipping the call in the common development
+    case would mean the markup could drift and only production would find out,
+    which is the opposite of what `_sub_once` is for.
+
+    The value is `origin + "/"`: the campaign is one document selected by
+    `?level=` and a cookie, so the canonical page is the root, not the URL the
+    visitor happens to be on.
+    """
+    href = f"{origin}/"
+    html = _sub_once(
+        html,
+        r'(<link rel="canonical" href=")[^"]*(")',
+        lambda m: f"{m.group(1)}{href}{m.group(2)}",
+        "rel=canonical href",
+    )
+    return _sub_once(
+        html,
+        r'(<meta property="og:url" content=")[^"]*(")',
+        lambda m: f"{m.group(1)}{href}{m.group(2)}",
+        "og:url content",
+    )
+
+
 def _textarea_with(html: str, passage_text: str) -> str:
     """Rebuild the textarea region, keeping the element's attributes verbatim."""
     start = html.find(TEXT_OPEN) + len(TEXT_OPEN)
@@ -475,12 +564,19 @@ class BootRenderer:
             self._cached.clear()
         return self._template
 
-    def render(self, level_n: int) -> str | None:
+    def render(self, level_n: int, *, origin: str = "") -> str | None:
         """The page for one level, or `None` when there is nothing to render.
 
         `None` means the campaign is empty — no packed passages and no dev
         fixture. An out-of-range `level_n` never reaches here: `main` resolves
         the request to a level that exists before asking for a render.
+
+        `origin` is the scheme-and-host this request arrived on, already
+        validated by `safe_origin`, and it is applied AFTER the cache — see
+        `render_origin` on why the one region that varies by `Host` must not be
+        allowed anywhere near the cache key. Default `""` leaves `og:url` and
+        `canonical` relative, which is what the un-served template says and what
+        every existing caller wants.
         """
         if not self.available():
             return None
@@ -492,7 +588,7 @@ class BootRenderer:
         key = (level_n, bundle.id, ruleset.id, self._template_mtime)
         cached = self._cached.get(level_n)
         if cached is not None and cached.key == key:
-            return cached.html
+            return render_origin(cached.html, origin)
 
         payload = build_boot_payload(
             content=self.content,
@@ -504,4 +600,4 @@ class BootRenderer:
         )
         html = render_index(template, payload=payload, passage_text=bundle.public.text)
         self._cached[level_n] = _Cached(key=key, html=html)
-        return html
+        return render_origin(html, origin)

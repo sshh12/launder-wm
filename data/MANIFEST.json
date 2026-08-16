@@ -20,20 +20,20 @@
       "blake3": "blake3:73d6c230726960a928055d1e85dd1b0f7856679669fcf1be1d63de259f7832ff"
     },
     "data/config/copy.toml": {
-      "bytes": 17951,
-      "blake3": "blake3:46828d007f691617c3f3cec769b3076bb8d327366cb96b64cf49adf19584f840"
+      "bytes": 18203,
+      "blake3": "blake3:fe91f9f244caddd5a419363f09d384be2ea8e4449d9b8988976aeef1eee1fad0"
     },
     "data/config/judge.toml": {
-      "bytes": 9634,
-      "blake3": "blake3:7935db5d037a792cf13e2ab7e6c4f998ca1268fe9f3d2a4045a531c173d07c9a"
+      "bytes": 10864,
+      "blake3": "blake3:12fd11bb0eec8727280584313b64bb5f49aea12e6fc588baf61f642fc61fd2e8"
     },
     "data/config/lemma.v1.tsv": {
       "bytes": 2148,
       "blake3": "blake3:885b7649d4d7b3c02143a02def1b87b4f8e45716bfceb4a357f1d4b43936fa58"
     },
     "data/config/levels.toml": {
-      "bytes": 9766,
-      "blake3": "blake3:9fa2ae3cb9972ba2c650f4b69821a9047b9c310e619a0e31c3823fe5e005653d"
+      "bytes": 10899,
+      "blake3": "blake3:349404644132a9e302911f302a914232dc2c218e6f04a0e565550f4845fc1105"
     },
     "data/config/progression.toml": {
       "bytes": 5217,
@@ -264,8 +264,8 @@
       "blake3": "blake3:0f309301bde941e27eb855e6863c85584fd2c690a02e70dabdd1cb828cbee23f"
     },
     "data/passages/README.md": {
-      "bytes": 1900,
-      "blake3": "blake3:38f2ed848a723ec94994b72042aa1e4a0384549d81614b93d90a30bf68ce224e"
+      "bytes": 2562,
+      "blake3": "blake3:031241c46d06f804afe58a20ce50bed3f73dae34d43182faff1b38d2421e0917"
     },
     "data/regen/.gitkeep": {
       "bytes": 0,
@@ -285,7 +285,7 @@
     }
   },
   "env": {
-    "checked_at": "2026-08-16T20:09:56+00:00",
+    "checked_at": "2026-08-16T21:39:54+00:00",
     "python": "3.12.14",
     "platform": "Windows 11 (AMD64)",
     "torch": "2.13.0+cpu",

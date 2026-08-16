@@ -239,8 +239,19 @@ class CachingJudge:
             CachedVerdict(
                 judge_version=self.judge_version,
                 passage_id=passage.id,
-                # The observation is level-independent; the level enters at
-                # derivation. Recorded for forensics, not used in the key.
+                # THIS IS THE RULESET THE PASSAGE WAS PACKED UNDER, NOT THE ONE
+                # BEING PLAYED, and the two differ on half the campaign: p11 is
+                # packed L2 and played L1, p03 L1/L7, p12 L7/L8, p14 L8/L9. The
+                # gate is handed a `PassagePublic` and nothing else, so the
+                # played ruleset is not in scope here — threading it down would
+                # change core's judge protocol for a forensic column.
+                #
+                # It is harmless because it is forensic ONLY: the observation is
+                # level-independent (the model is never told what level it is
+                # judging; code derives the verdict from the level's params at
+                # `derive_verdict`), and the key deliberately omits the level —
+                # see the module docstring. Read this column as "which ruleset
+                # this passage ships under", never as "which rules decided this".
                 level_id=passage.level_id,
                 cleared=obs.verdict_opinion == "pass",
                 observation=obs.model_dump(mode="json"),

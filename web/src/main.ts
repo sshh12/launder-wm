@@ -22,6 +22,7 @@ import "./styles/index.css";
 
 import { Gate, type GateElements } from "./game/gate";
 import { Intro } from "./game/intro";
+import { LivePreview } from "./game/live";
 import {
   Mirror,
   layoutFromTokens,
@@ -202,6 +203,7 @@ function start(boot: Boot): void {
     resultSyms: must("rsyms"),
     resultDiff: must("rdiff"),
     resultShare: must("rshare"),
+    resultNote: must("rnote"),
     resultActions: must("ractions"),
     allClear: must("rallclear"),
     nextButton: must("nextlvl"),
@@ -228,6 +230,16 @@ function start(boot: Boot): void {
     });
   }
 
+  // Every closed-form rule, answered from the text in the box. Constructed with
+  // the pristine passage, so before the player types anything the checklist
+  // already reads as it should: nothing changed, nothing invisible, the phrase
+  // still there, and only the detector above the line.
+  const live = new LivePreview({
+    original: originalText,
+    lockedPhrases: boot.locked_phrases ?? [],
+    points: pointsCfg,
+  });
+
   const gate = new Gate({
     doc: document,
     els: gateEls,
@@ -236,6 +248,7 @@ function start(boot: Boot): void {
     par: boot.par,
     originalText,
     sheets,
+    live,
     points: pointsCfg,
     levelN: boot.level_n,
     levelCount: boot.level_count,
@@ -279,11 +292,25 @@ function start(boot: Boot): void {
   let lastHeat: number[] = heatOf(tokens);
   let pendingHeat = boot.reading === null;
 
-  function paintMirror(text: string, next: readonly TokenHeat[], editIndex: number | null): void {
+  /**
+   * Paint the mirror, and let it name the ripple's origin ITSELF.
+   *
+   * `caret` is a character offset into `text`, not a token index, and the
+   * translation happens AFTER `setText` — against the layout that is about to be
+   * painted. It used to be translated by the caller, against whatever layout the
+   * mirror still held from the previous frame, and on the typing path that
+   * layout describes the text as it was BEFORE the keystroke. Typing a character
+   * at the end of the passage put the impulse (and the `--d` propagation origin)
+   * on the second-to-last span rather than on the one just typed, and a paste of
+   * N characters moved it N characters' worth of tokens to the right of the
+   * edit. `layoutFromTokens` may also DROP a malformed token, so the layout's
+   * own span list is the only list whose indices match the spans on screen.
+   */
+  function paintMirror(text: string, next: readonly TokenHeat[], caret: number | null): void {
     const layout = layoutFromTokens(text, next);
     mirror.setText(layout);
     mirror.setHeat(heatOf(next), {
-      editIndex,
+      editIndex: caret === null ? null : mirror.tokenIndexAtChar(caret),
       prev: lastHeat,
       pending: pendingHeat,
     });
@@ -294,19 +321,22 @@ function start(boot: Boot): void {
 
   mirror.hardRepaint(layoutFromTokens(originalText, tokens), heatOf(tokens), pendingHeat);
 
-  if (boot.reading !== null) {
-    const first = readingFromWire(boot.reading);
-    store.applyReading(first, originalText);
-  }
-
   /* ---- the detector paths -------------------------------------------- */
 
   const detect = new DetectClient({
     store,
     passageId: boot.passage_id,
-    // A 5xx and a dropped connection are the same event to the player: the
-  // needle stopped updating. copy.toml has one string for that today.
-  onError: () => showNotice("errors.network"),
+    // A 5xx and a dropped connection ARE the same event to the player: the
+    // needle stopped updating, and "No connection. Your text is safe" is true
+    // of both. A 404 is not — it means this page is playing a level the server
+    // does not have (a tab left open across a deploy, or a hand-typed
+    // `?level=`), and no amount of waiting fixes it; the fix is a reload, which
+    // is what `errors.unknown_passage` says. `DetectClient` has always passed
+    // the status and this callback has always dropped it, under a comment
+    // claiming copy.toml had one string for the case — it has had two since the
+    // campaign shipped, and `net/submit.ts` has been mapping them all along.
+    onError: (_kind, status) =>
+      showNotice(status === 404 ? "errors.unknown_passage" : "errors.network"),
     onApplied: () => hideNotice(),
   });
 
@@ -330,24 +360,29 @@ function start(boot: Boot): void {
     }
   });
 
-  /** Index of the token containing `char` in the reading's own token list —
-   *  the ripple's origin has to be an index into the NEW spans, not the old. */
-  function indexAtChar(list: readonly TokenHeat[], char: number): number | null {
-    for (let i = 0; i < list.length; i++) {
-      const t = list[i];
-      if (t !== undefined && char <= t.e) return i;
-    }
-    return list.length > 0 ? list.length - 1 : null;
-  }
-
   let touched = false;
 
   function applyReadingToView(reading: Reading): void {
     pendingHeat = false;
-    const editIndex = touched ? indexAtChar(reading.tokens, caretChar) : null;
-    paintMirror(store.get().text, reading.tokens, editIndex);
+    paintMirror(store.get().text, reading.tokens, touched ? caretChar : null);
     needle.setTarget(reading.z);
     gate.setReading(reading);
+  }
+
+  /* ---- the reading the SERVER already inlined (§5.4 step 1) ------------ *
+   * Applied HERE, below the subscription, and that position is the whole
+   * point. It used to run beside `hardRepaint`, before `store.subscribe` had
+   * been called — so the one `emit("reading")` the pristine passage ever
+   * produces reached no listener, and `gate.setReading` was never called with
+   * it. The mirror was fine (`hardRepaint` paints the same tokens directly),
+   * which is what hid it: what was missing was the LIVE detector rows. The two
+   * checks that read the needle — `detector_threshold`, the win condition, and
+   * `detector_floor` — stayed on "Not checked yet" until the player's first
+   * keystroke came back from the detector, on a page that was holding a real
+   * reading the entire time. The level's own rule read as unanswered.
+   * -------------------------------------------------------------------- */
+  if (boot.reading !== null) {
+    store.applyReading(readingFromWire(boot.reading), originalText);
   }
 
   /* ---- typing --------------------------------------------------------- */
@@ -363,9 +398,12 @@ function start(boot: Boot): void {
     // Text NOW: the mirror defines the box height and the textarea cannot
     // scroll, so a stale mirror clips the line the player is typing on.
     pendingHeat = true;
-    paintMirror(text, reanchorTokens(tokens, mirrorText, text), mirror.tokenIndexAtChar(caretChar));
+    paintMirror(text, reanchorTokens(tokens, mirrorText, text), caretChar);
     needle.setPending(true);
     gate.setOutcome(null);
+    // The closed-form rules re-answer NOW, from this exact string — they do not
+    // wait for the detector's round trip, because none of them needs it.
+    gate.setText(text);
     if (local.ready) local.score(text);
     else detect.schedule(text);
   }
@@ -545,8 +583,14 @@ function start(boot: Boot): void {
   function applyLocalResult(r: ScoreResponse): void {
     const sent = local.sent.get(r.seq);
     local.sent.delete(r.seq);
-    // The worker hashes to bare hex; the wire contract (and the store) uses the
-    // `sha256:` prefixed spelling of launder_core.schemas.watermark.
+    // The store's guard compares against the `sha256:`-prefixed spelling of
+    // `launder_core.schemas.watermark`, and an unprefixed digest would never
+    // match — it would silently drop every local reading.
+    //
+    // `detector.worker.ts:123` already posts the prefixed form, so this is
+    // belt and braces rather than a conversion. The comment here used to say
+    // the opposite ("the worker hashes to bare hex"), which would send the next
+    // reader to fix the wrong side of the boundary.
     const hash = r.text_hash.startsWith("sha256:") ? r.text_hash : `sha256:${r.text_hash}`;
     store.applyReading(
       readingFromWire({

@@ -290,17 +290,28 @@ class CalibrationBucket:
     other is derived. `score_at_fpr` is what `forge calibrate` naturally
     produces (the `(1-fpr)` percentile of the null score distribution), and
     `sigma = (score_at_fpr - 0.5) / Phi_inv(1-fpr)` converts it.
+
+    `depth` is carried on the bucket because `kappa` is a RATIO against the
+    closed form, and the closed form has an `m` in it. It used to be defaulted
+    to 30 here while `Calibration.sigma` divided by `sigma_closed_form(T,
+    self.depth)`, so the two `m`s only cancelled while the thresholds file said
+    `depth = 30`: a file declaring any other depth reported `sigma` off by
+    `sqrt(30/depth)` — a MEASURED sigma silently replaced by a different number
+    — with nothing raising. `parse_thresholds` now threads the file's own depth
+    through, so the identity `Calibration.sigma(b.n_scored) == b.sigma` holds at
+    every depth, which is the only thing a measured bucket can mean.
     """
 
     n_scored: int
     sigma: float
     n_samples: int = 0
     score_at_fpr: float | None = None
+    depth: int = 30
 
     @property
     def kappa(self) -> float:
         """How many times wider the truth is than the closed form, at this `T`."""
-        closed = sigma_closed_form(self.n_scored)
+        closed = sigma_closed_form(self.n_scored, self.depth)
         if not math.isfinite(closed) or closed <= 0.0:
             return 1.0
         return self.sigma / closed
@@ -327,7 +338,15 @@ class Calibration:
     #: weighted mean's null sd is `weighting_kappa(depth)` times it, exactly and
     #: analytically. Defaulting this to 1.0 overstated every fallback `z` by
     #: 5-11% and ran a 1%-FPR notch at a true 2-3%.
-    base_kappa: float = 1.0
+    #:
+    #: ...and it WAS still defaulted to 1.0, three lines under that sentence.
+    #: Both constructors in this module passed `weighting_kappa` explicitly, so
+    #: the shipped paths were right and the default was a loaded gun for the
+    #: next caller: `Calibration(depth=30)` — the obvious way to write "the
+    #: fallback curve" — silently reinstated the bug the comment describes.
+    #: `None` now means "the analytic weighting factor for MY depth", which is
+    #: the only correct answer, and an explicit float still wins.
+    base_kappa: float | None = None
 
     def __post_init__(self) -> None:
         if self.depth < 1:
@@ -351,7 +370,7 @@ class Calibration:
         a fitted slope past 400 tokens would invent precision nobody measured.
         """
         if not self.buckets:
-            return self.base_kappa
+            return weighting_kappa(self.depth) if self.base_kappa is None else self.base_kappa
         t = max(float(n_scored), 1.0)
         if len(self.buckets) == 1 or t <= self.buckets[0].n_scored:
             return self.buckets[0].kappa
@@ -421,7 +440,7 @@ def closed_form_calibration(depth: int | None = None, z_star: float = Z_STAR) ->
     )
 
 
-def _bucket_from_json(raw: dict[str, Any], fpr: float) -> CalibrationBucket:
+def _bucket_from_json(raw: dict[str, Any], fpr: float, depth: int) -> CalibrationBucket:
     n_scored = int(raw["n_scored"])
     score_at_fpr = raw.get("score_at_fpr")
     sigma = raw.get("sigma")
@@ -441,6 +460,7 @@ def _bucket_from_json(raw: dict[str, Any], fpr: float) -> CalibrationBucket:
         sigma=sigma,
         n_samples=int(raw.get("n_samples", 0)),
         score_at_fpr=None if score_at_fpr is None else float(score_at_fpr),
+        depth=depth,
     )
 
 
@@ -522,7 +542,7 @@ def parse_thresholds(raw: dict[str, Any], name: str, source: str) -> Calibration
 
     buckets = tuple(
         sorted(
-            (_bucket_from_json(e, fpr) for e in entries),
+            (_bucket_from_json(e, fpr, depth) for e in entries),
             key=lambda b: b.n_scored,
         )
     )

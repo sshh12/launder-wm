@@ -3,8 +3,8 @@
 > **SUPERSEDED IN PART — 2026-08-15.** This document is a historical design
 > record and is kept unedited below. The **daily** model it describes throughout
 > — one passage per UTC day, the 04:00 UTC rollover, puzzle numbers, streaks and
-> the per-day leaderboard — was replaced before launch by a **linear 15-level
-> campaign**: levels 1..15 played in order, each unlocked by clearing the one
+> the per-day leaderboard — was replaced before launch by a **linear 8-level
+> campaign**: levels 1..8 played in order, each unlocked by clearing the one
 > before it, progress held in `localStorage` and on the server against the
 > anonymous session id. `data/config/schedule.toml` was deleted; the file that
 > replaced it is **`data/config/progression.toml`**, which maps each level `n`
