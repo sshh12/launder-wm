@@ -15,8 +15,9 @@
     ]
   },
   "deploy": {
-    "startCommand": "uvicorn launder_serve.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips '*'",
-    "preDeployCommand": ["alembic upgrade head"],
+    "preDeployCommand": [
+      "alembic upgrade head"
+    ],
     "healthcheckPath": "/healthz",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
@@ -28,7 +29,9 @@
   "environments": {
     "pr": {
       "deploy": {
-        "preDeployCommand": ["alembic upgrade head"],
+        "preDeployCommand": [
+          "alembic upgrade head"
+        ],
         "numReplicas": 1
       }
     }
