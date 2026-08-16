@@ -14,11 +14,18 @@
 # stage and the runtime is stock `python:3.12-slim-bookworm` — the SAME base the
 # uv image is built on, so the venv's interpreter symlinks resolve unchanged.
 
+# EVERY `--mount=type=cache` CARRIES AN EXPLICIT `id=`. Local BuildKit defaults
+# the id to the target path and accepts the flag without one; Railway's Metal
+# builder does not, and rejects the Dockerfile outright with "flag
+# '--mount=type=cache,target=...' is missing an id argument". That is a build
+# which passes `docker build` on a laptop and fails every deploy, so these ids
+# are not optional decoration.
+
 # ---------- stage 1: frontend ----------
 FROM node:24-bookworm-slim AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=cache,id=launder-npm,target=/root/.npm npm ci
 # The build reads the committed assets and the golden vectors: vitest runs the
 # SAME data/golden/vectors.json pytest reads, and pack-check.mjs asserts the
 # packed tokenizer blob round-trips to zero mismatches.
@@ -58,11 +65,11 @@ COPY packages/serve/pyproject.toml packages/serve/
 COPY packages/forge/pyproject.toml packages/forge/
 # Third-party wheels first, on their own layer, so a source-only change does not
 # re-resolve them.
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=launder-uv,target=/root/.cache/uv \
     uv sync --locked --no-dev --package launder-serve --no-install-project
 COPY packages/core/ ./packages/core/
 COPY packages/serve/ ./packages/serve/
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=launder-uv,target=/root/.cache/uv \
     uv sync --locked --no-dev --package launder-serve
 
 # ---------- stage 3: runtime ----------
