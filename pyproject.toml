@@ -1,19 +1,20 @@
 ##
-## Launder LM — uv workspace root.
+## Launder WM — uv workspace root.
 ##
 ## This file is NOT a distributable package. It exists to (a) declare the three
 ## workspace members, (b) hold the dev dependency group shared by all of them,
 ## and (c) own the single ruff / mypy / pytest configuration so `launder-core`
-## is linted and tested exactly once. See TECH_PLAN.md §2.1 and §3.
+## is linted and tested exactly once. See .build-docs/TECH_PLAN.md §2.1 and §3.
 ##
 [project]
 name = "launder-wm"
 version = "0.1.0"
-description = "Launder LM — a static browser game with a receipt (workspace root)"
+description = "Launder WM — a static browser game with a receipt (workspace root)"
 requires-python = ">=3.12,<3.13"
 # Root depends on all three members so a bare `uv sync` gives one venv that can
-# run forge, serve and the whole test suite (TECH_PLAN.md §6.1). torch is NOT
-# pulled in by this: it lives behind launder-forge's `cpu` / `cuda` extras.
+# run forge, serve and the whole test suite (.build-docs/TECH_PLAN.md §6.1).
+# torch is NOT pulled in by this: it lives behind launder-forge's `cpu` /
+# `cuda` extras.
 dependencies = [
     "launder-core",
     "launder-serve",
@@ -78,9 +79,11 @@ target-version = "py312"
 src = ["packages/core/src", "packages/serve/src", "packages/forge/src"]
 # `*.md` IS NOT COSMETIC. ruff >= 0.13 formats Python code blocks embedded in
 # Markdown, so a bare `ruff format .` silently rewrites the ```python fences
-# inside TECH_PLAN.md and CONCEPT.md — reflowing the spec while you thought you
-# were formatting the source. Those two documents are the authority this repo is
-# built against; they are not ruff's to edit.
+# inside .build-docs/TECH_PLAN.md and .build-docs/CONCEPT.md — reflowing the
+# spec while you thought you were formatting the source. Those documents are the
+# record this repo was built against; they are not ruff's to edit. The pattern
+# has no slash in it, so it matches at every depth and followed them into
+# .build-docs/.
 extend-exclude = ["data", "web", "tools/reference", "*.md"]
 
 [tool.ruff.lint]

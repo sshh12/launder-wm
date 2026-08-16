@@ -1,0 +1,70 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p15",
+  "level_id": "L4",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Textile dyeing is a complex process deeply rooted in chemistry and color science, transforming plain fabrics into the vibrant and patterned textiles we see every day. Traditionally, the process relied heavily on natural dyes extracted from plants, insects, or minerals, often involving laborious extraction and reduction methods. However, modern textile dyeing predominantly utilizes synthetic dyes, which offer a broader spectrum of colors, greater colorfastness, and easier application. The initial stage typically involves preparing the fabric, often through scouring to remove impurities and oils that could interfere with dye uptake. Then, the fabric is immersed in a dye bath, a carefully formulated solution containing the dye, a mordant – a substance that helps the dye bind to the fiber – and auxiliary chemicals. The temperature, pH, and duration of immersion are meticulously controlled to ensure even dye penetration and optimal color development. Different dye classes, such as direct dyes, reactive dyes, and vat dyes, are suited for different fiber types and offer varying levels of wash and light fastness. Following dyeing, a rinsing and fixation process is crucial to remove excess dye and permanently bond it to the textile, ultimately resulting in the desired colored fabric. Concerns regarding environmental impact are increasingly driving research into more sustainable dyeing practices, including waterless dyeing technologies and the use of eco-friendly dyes.",
+  "n_words": 218,
+  "detector": {
+    "expected_n_scored": 253,
+    "expected_score": 0.52519277551307,
+    "expected_z": 4.305329434244232,
+    "g_digest": "blake3:1274d093037ff49f2c9a7b56290dc58a08c956d31179d7d7a9f567fd7608ef55"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Textile dyeing traditionally relied on natural dyes extracted from plants, insects or minerals.",
+      "label": "natural dyes from plants and insects",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Modern textile dyeing predominantly uses synthetic dyes, which offer a broader range of colours, greater colorfastness and easier application.",
+      "label": "the shift to synthetic dyes",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "The fabric is prepared first, usually by scouring away impurities and oils that would interfere with dye uptake.",
+      "label": "scouring the fabric first",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "The fabric is then immersed in a dye bath containing the dye, a mordant that helps the dye bind to the fibre, and auxiliary chemicals.",
+      "label": "the dye bath and its mordant",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Temperature, pH and the duration of immersion are carefully controlled to give even dye penetration and good colour development.",
+      "label": "controlled temperature, pH and time",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Different dye classes such as direct, reactive and vat dyes suit different fibre types and give different levels of wash and light fastness.",
+      "label": "direct, reactive and vat dyes",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "After dyeing, rinsing and fixation remove excess dye and bond the rest permanently to the textile.",
+      "label": "rinsing and fixation",
+      "required": false
+    }
+  ],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

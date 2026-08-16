@@ -50,7 +50,7 @@ async def detect(request: Request, body: DetectRequest, response: Response) -> D
     # 2. The watermark lives in the token ids the model actually emitted.
     #    `forge pack` computes `expected_z`/`g_digest` from `encode(raw text)`,
     #    so scoring the normalized form produces a different tokenization
-    #    (measured: 329 raw vs 321 normalized on p_2026-08-16) and a z that can
+    #    (measured: 329 raw vs 321 normalized on p02) and a z that can
     #    never reproduce the passage's own conformance record — §4.5's runtime
     #    tripwire would fire on every passage, on keystroke zero.
     #

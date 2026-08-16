@@ -14,9 +14,15 @@
 #   1. ONE WORD, ONE MEANING. "Floor" once meant both the detector threshold
 #      and the 50-word minimum, on the same screen. The threshold label is
 #      "Under N to clear"; "floor" keeps the length minimum, alone.
-#   2. NEVER CLAIM MORE THAN THE DETECTOR CAN SUPPORT. Absence of a watermark
-#      does not prove a human wrote it. The readout is "AI detected" /
-#      "Not detected" — never "human", never a "% AI" figure.
+#   2. NEVER CLAIM MORE THAN THE DETECTOR CAN SUPPORT. The detector finds a
+#      watermark; it does not find an author. Absence of a watermark does not
+#      prove a human wrote it, and presence of one does not prove which model
+#      wrote it. The readout is "AI watermark detected" / "Not detected" —
+#      never "human", never a "% AI" figure. The meter's 0-100 number is a
+#      relabelled z, so it is never printed with a "%" and never called a
+#      percentage or a probability. Nor is the watermark ever called SECURE:
+#      the keys are published, which makes it real, not secure, and real is
+#      the more interesting claim anyway (§14.4).
 #   3. NAME THE FAILURE, NOT THE TAXONOMY. Rejection text is read by someone
 #      who just lost; jargon reads as a shrug.
 #
@@ -37,13 +43,13 @@ schema = "launder.copy/1"
 
 # ---------------------------------------------------------------------------
 # The first-land sheet (§10.7). Wordle's contract exactly: opens once on first
-# land, keyed on localStorage["launderlm.primer.v1"], and thereafter only from
-# the `?` in the rail. ~80 words in three beats. It never explains the ripple —
+# land, keyed on localStorage["launderwm.primer.v1"], and thereafter only from
+# the `?` in the rail. ~60 words in three beats. It never explains the ripple —
 # the mirror teaches that wordlessly and prose would spoil it.
 # ---------------------------------------------------------------------------
 [primer]
 lede_1 = "This text is watermarked."
-body_1 = "When an AI writes, many words would fit in each spot. A watermark makes it choose them in a secret pattern. The text reads normally, but a detector that knows the pattern can find it."
+body_1 = "Watermarking makes language models choose words in a secret pattern. The text reads normally, but a detector that knows the pattern can find it."
 
 # THE DEMO STRIP IS GENERATED, NEVER HAND-PAINTED. It runs the production
 # contributions() over the real key, so the cold slots are cold because the
@@ -53,11 +59,13 @@ body_1 = "When an AI writes, many words would fit in each spot. A watermark make
 # CI ASSERTION on whatever sentence ships here (§10.7): at least one FUNCTION
 # word must land in the top heat quartile and at least one CONTENT word must
 # fall below the optionality cutoff. The reference sentence lands "The" and "on"
-# at full heat and "met", "consider", "of" at zero — the §4.6 guardrail
-# demonstrated rather than asserted: the most banal words are the hottest. If a
-# candidate demo sentence fails that test, it is the wrong sentence.
+# at full heat and "met", "consider", "of" at zero. That is the §4.6 guardrail —
+# the most banal words are the hottest — and the STRIP carries it alone: there
+# is no caption under the demo restating it in words, because a sentence the
+# player skims past teaches nothing the picture has not already shown, and it
+# costs the sheet a beat. If a candidate demo sentence fails the assertion, it
+# is the wrong sentence.
 demo   = "The committee met on Thursday to consider whether the proposal deserved another year of funding."
-cap    = "The stain is strongest where many words could have fit — not where words look clever."
 
 lede_2 = "Your job: wash it out."
 body_2 = "Move the needle below the line. Use as few word changes as you can. The text must still read well and mean the same."
@@ -67,9 +75,15 @@ close_label = "Start"
 
 # ---------------------------------------------------------------------------
 # The detector readout.
+#
+# The `{z_*_display}` placeholders keep their names because z is what the wire,
+# the DB and the geometry carry — but what gets substituted into them is the
+# 0-100 POINTS relabelling (§11). z is a statistic nobody can place and a scale
+# that runs from -2 to 10 reads as broken. Points are a monotone renaming of
+# the same number, so "under 36" and "z <= 2.3263" are the same sentence.
 # ---------------------------------------------------------------------------
 [readout]
-above           = "AI detected"
+above           = "AI watermark detected"   # the detector finds a watermark, not an author
 below           = "Not detected"      # never "human" — the detector cannot support that claim
 threshold_label = "Under {z_star_display} to clear"
 meter_name      = "Watermark evidence"
@@ -80,12 +94,41 @@ distance_label  = "{distance} changed"
 distance_zero   = "nothing changed"
 cleared_toast   = "Cleared in {distance}"
 provisional_note = "Gate unavailable — this one does not count."
-share_template  = "Launder #{puzzle_number} — cleared in {distance} 🧼"
+share_template  = "Launder WM — level {level_n} cleared in {distance} 🧼"
 
-# The ONE piece of standing screen copy. Twelve words is the whole budget.
+# The end-of-campaign share (§12). `{per_level}` is every level's distance in
+# level order, space-separated, in groups of five joined by " · " so fifteen
+# numbers stay scannable in a timeline; a level with no recorded distance is a
+# "-". `{total}` is their sum and `{url}` is `location.origin` at RUNTIME —
+# hardcoding a domain here would post the wrong link from every preview deploy
+# and from localhost.
+share_all_template = "Launder WM 🧼\nCleared all {level_count} levels — {total} words changed\n{per_level}\n{url}"
+
+# The playing screen. `action` is the only standing INSTRUCTION, and twelve
+# words is the whole budget for that. Everything else here is furniture: where
+# the player is in the campaign, the two states of the result sheet's forward
+# button, and the two links in the footer. Furniture does not teach, so it does
+# not spend the instruction budget — but it still has to be plain.
 [screen]
-action        = "Check"          # the action keeps one name through the whole flow
-rollover_note = "New passage at midnight UTC"
+action      = "Check"          # the action keeps one name through the whole flow
+level_label = "Level {n} of {total}"   # {total} is always shown: 15 is the promise
+next_label  = "Next level"
+all_clear   = "That was the last level. You cleared every one."
+credit      = "Made by @ShrivuShankar"
+source      = "Source"
+# The share box's button, and it is NOT optional furniture. `data-copy-opt`
+# removes its element when this key is missing, which detached the one click
+# handler that can copy a share — and on the last level, where the whole
+# campaign's score is the only thing the game still has to give the player,
+# the forward button is hidden too, so the sheet offered a four-line string
+# and no way to take it anywhere. One verb, the same one every other app puts
+# on this button.
+copy_label  = "Copy"
+# The four sheet dismiss buttons render a bare "×", which a screen reader
+# announces as "multiplication sign". `data-copy-aria-opt` only sets the
+# aria-label when the key exists, so without this the sheets close via a
+# control that has no name at all.
+close_label = "Close"
 
 # ---------------------------------------------------------------------------
 # One block per registered check name (§7.6 REGISTRY keys), NOT per level.
@@ -156,9 +199,16 @@ reject = "This did not pass the reading check."
 # One line per derived verdict code (§7.4). `claim_label` is AUTHORED OFFLINE,
 # which is why feedback can name a dropped claim without ever quoting the
 # player's own text back at them — both an injection surface and bad UX.
+#
+# `claim_label` is a NOUN PHRASE by construction ("the purpose of triage"), so
+# every template here has to read with one substituted in. `meaning_inverted`
+# used to say "the original says {claim_label}, yours doesn't", which needs a
+# CLAUSE and rendered "the original says the purpose of triage, yours doesn't."
+# across all 105 authored claims. It read as correct only while every passage
+# shipped an empty claim list and the branch could never fire.
 [check.llm_gate.reject_by_code]
 meaning_drift     = "Meaning drifted — you dropped the claim about {claim_label}."
-meaning_inverted  = "Meaning flipped — the original says {claim_label}, yours doesn't."
+meaning_inverted  = "Meaning flipped — you reversed the claim about {claim_label}."
 meaning_added     = "You added something the original never says: \"{added}\"."
 injection_attempt = "Nice try. The judge reads your text, it doesn't take orders from it."
 
@@ -188,7 +238,11 @@ checklist_title = "This level's rules"
 network        = "No connection. Your text is safe; try Check again."
 rate_limited   = "Too many checks. Try again in {retry_after_s} seconds."
 too_long       = "That text is too long to check."
-unknown_passage = "That passage is not the one running today."
+# A 404 from submit or detect: the level this page is playing is not one the
+# server knows about — a tab left open across a deploy, or a hand-typed
+# `?level=`. Nothing rolls over and nothing is "running today"; the fix is a
+# reload, so the copy says so.
+unknown_passage = "That level is not on this server. Reload the page."
 detector_offline = "The needle is reading from the server right now."
 detector_mismatch = "This build's detector does not match this passage. Reading from the server instead."
 
@@ -209,7 +263,3 @@ hand_off     = "Now wash one out."
 # ---------------------------------------------------------------------------
 [disclosure]
 l6_regen = "These four texts were generated ahead of time on the author's RTX 5090 — Railway has no GPU. The generation is real; the detector reading you're watching is live, right now, in your browser, with the same key that flagged every other level."
-
-# Never let any copy claim the game demonstrates a SECURE watermark. It
-# demonstrates a REAL one, which is the more interesting claim anyway (§14.4).
-keys_published = "The keys are published. That makes this watermark real, not secure — you can check every number here yourself."

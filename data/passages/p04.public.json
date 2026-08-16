@@ -1,0 +1,70 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p04",
+  "level_id": "L1",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Well drilling is a complex and technically demanding process of creating a subterranean hole to access groundwater or geological formations. The initial phase typically begins with extensive geological surveys, utilizing techniques like seismic refraction and geophysical logging to map subsurface strata and determine the best location for the well. Once a suitable spot is identified, a drilling rig is brought to the site, a massive piece of machinery equipped with a rotating drill bit, a powerful engine, and a system for managing drilling fluids. The drill bit, often made of hardened steel, grinds through soil, rock, and other obstructions, and the rotating motion generates friction that removes the loosened material. Drilling fluids, known as mud, are pumped down the borehole to lubricate the bit, cool it, remove cuttings (fragments of rock and soil), and stabilize the walls of the hole, preventing collapse. As the drill progresses, casing – a sturdy steel pipe – is inserted into the borehole to provide structural integrity, prevent contamination of the groundwater, and allow for the installation of a pump.  The depth of the well is determined by the desired yield, geological conditions, and local regulations, and once drilling is complete, the casing is cemented in place to ensure a secure and long-lasting well. Finally, a pump is placed at the top of the well to draw water to the surface for use.",
+  "n_words": 228,
+  "detector": {
+    "expected_n_scored": 262,
+    "expected_score": 0.5288217792561041,
+    "expected_z": 5.007557955418091,
+    "g_digest": "blake3:534b44191fb862f45abaf933c06ce832f94cca62060e0885863b685d97a9361d"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Well drilling is the process of creating a subterranean hole to reach groundwater or geological formations.",
+      "label": "the purpose of the borehole",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Drilling begins with geological surveys, using techniques such as seismic refraction and geophysical logging, to map the subsurface strata and choose the best location for the well.",
+      "label": "the geological survey",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "A drilling rig is brought to the site, carrying a rotating drill bit, a powerful engine and a system for managing drilling fluids.",
+      "label": "the drilling rig",
+      "required": false
+    },
+    {
+      "id": "c4",
+      "text": "Drilling fluids known as mud are pumped down the borehole to lubricate and cool the bit, carry cuttings out, and stabilize the walls of the hole against collapse.",
+      "label": "the role of drilling mud",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Casing, a sturdy steel pipe, is inserted into the borehole to give it structural integrity, keep the groundwater from being contaminated, and allow a pump to be installed.",
+      "label": "the steel casing",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "The depth of the well is set by the desired yield, the geological conditions and local regulations.",
+      "label": "what sets the well depth",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "A pump is placed at the top of the finished well to draw water up to the surface.",
+      "label": "the surface pump",
+      "required": false
+    }
+  ],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

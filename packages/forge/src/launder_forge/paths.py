@@ -14,9 +14,18 @@ from typing import Final
 
 __all__ = ["Paths", "find_repo_root", "repo_paths"]
 
-#: Files that together identify the repository root. TECH_PLAN.md and the root
-#: pyproject both live there and neither exists anywhere else in the tree.
-_ROOT_MARKERS: Final[tuple[str, ...]] = ("TECH_PLAN.md", "pyproject.toml")
+#: Entries that together identify the repository root. The workspace
+#: `pyproject.toml` and the committed `data/` tree both live there, and no
+#: directory above the checkout has both — `packages/forge/` has a pyproject and
+#: no `data/`, so the walk does not stop one level too early.
+#:
+#: TECH_PLAN.md used to be the first marker. It moved to `.build-docs/`, and
+#: because a marker that is missing everywhere makes the walk run all the way to
+#: the filesystem root, EVERY forge command and every test using the `real_paths`
+#: fixture died with "could not find the repository root" until LAUNDER_REPO_ROOT
+#: was set by hand. Only pick markers that are pinned to the root by what they
+#: are, not by where a document happens to be filed.
+_ROOT_MARKERS: Final[tuple[str, ...]] = ("pyproject.toml", "data")
 
 
 def find_repo_root(start: Path | None = None) -> Path:
@@ -106,10 +115,6 @@ class Paths:
     @property
     def judge_toml(self) -> Path:
         return self.config / "judge.toml"
-
-    @property
-    def schedule_toml(self) -> Path:
-        return self.config / "schedule.toml"
 
     @property
     def triage_dir(self) -> Path:

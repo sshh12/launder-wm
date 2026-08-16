@@ -7,11 +7,11 @@ what comes back (§7.3, §7.4). Re-declaring any of them here would give the
 project two definitions of the thing the whole gate turns on.
 
 What serve adds is everything core deliberately refuses to know about — HTTP,
-SDKs, API keys, retries, failover, token accounting:
+SDKs, API keys, retries, token accounting:
 
 * `JudgeError` is the `JudgeUnavailable` core catches, carrying whether the
-  failure is worth a retry. §7.5 makes retry and failover the PROVIDER's job,
-  so by the time an exception reaches core it should already be one of these.
+  failure is worth a retry. §7.5 makes the retry policy the PROVIDER's job, so
+  by the time an exception reaches core it should already be one of these.
 * `JudgeUsage` is cost instrumentation. It is not part of the model's
   structured output and core's `Observation` is frozen with `extra="forbid"`,
   so providers return it alongside via `observe_with_usage()` rather than
@@ -44,10 +44,12 @@ __all__ = [
 
 
 class JudgeError(JudgeUnavailable):
-    """A provider failed. `retryable` decides retry-then-failover vs failover now.
+    """A provider failed. `retryable` decides "retry once" vs "give up now".
 
     A 5xx, a 429 or a timeout is worth one retry; a 400 will be a 400 again, and
-    burning the retry budget on it costs latency the player pays for.
+    burning the retry on it costs latency the player pays for. Either way the
+    end of the line is the same — there is no second vendor, so an exhausted
+    `JudgeError` reaches core and becomes a provisional clear.
     """
 
     def __init__(self, provider: str, message: str, *, retryable: bool = True) -> None:

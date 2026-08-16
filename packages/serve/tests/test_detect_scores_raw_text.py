@@ -13,7 +13,7 @@ quote) that produced two independent failures at once:
 * every offset after the first collapsed run shifted left, so heat landed on
   the wrong words and the error accumulated down the passage; and
 * the tokenization changed (measured: 329 tokens raw vs 321 normalized on the
-  first real daily), so the live reading could never reproduce the passage's
+  first packed passage), so the live reading could never reproduce the passage's
   own `expected_z` / `g_digest` — §4.5's runtime tripwire would have fired on
   every passage, on keystroke zero, in production.
 

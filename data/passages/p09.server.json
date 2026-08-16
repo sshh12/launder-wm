@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p09",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Map projection transforms the three-dimensional surface of the Earth onto a two-dimensional plane.",
+      "label": "flattening the globe onto a plane",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "A sphere cannot be flattened without altering its shape and proportions, so every projection involves distortion.",
+      "label": "the unavoidable distortion",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "Each projection is a compromise: it deliberately distorts certain properties of the Earth in order to minimise distortion in others.",
+      "label": "the compromise every projection makes",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "Projections prioritise different properties, such as area, shape, distance, or direction, so no single projection is correct for all purposes.",
+      "label": "the lack of one correct projection",
+      "required": false
+    },
+    {
+      "id": "c5",
+      "text": "The Mercator projection preserves angles, which makes it useful for navigation, but it greatly exaggerates the size of landmasses near the poles, such as Greenland.",
+      "label": "the Mercator projection",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "The Gall-Peters projection depicts the relative sizes of continents accurately but significantly distorts their shapes.",
+      "label": "the Gall-Peters projection",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Cylindrical projections wrap the Earth around a cylinder, while conic projections such as the Lambert Conformal Conic suit regions with irregular shapes like South America.",
+      "label": "cylindrical and conic projections",
+      "required": false
+    }
+  ],
+  "par": 4
+}

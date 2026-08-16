@@ -1,4 +1,4 @@
-"""`GET /` — the daily page, rendered (TECH_PLAN.md §3, §5.4 step 1, §9.1).
+"""`GET /` — the level page, rendered (TECH_PLAN.md §3, §5.4 step 1, §9.1).
 
 **THIS IS THE FILE THAT WAS MISSING.** `web/index.html` has carried a "SERVER
 TEMPLATE CONTRACT — launder_serve" comment block since M0, naming four regions
@@ -7,7 +7,7 @@ mounted `web/dist` verbatim, so every request got the checked-in DEV FIXTURE —
 `"dev": true`, `"passage_id": "p_dev"`, `"assets": null`. Because `main.ts`
 bails out of `upgrade()` when `assets` is falsy, the entire TypeScript detector,
 the worker, the IndexedDB cache and the parity gate that guards them were dead
-code at runtime, and the daily passage was never delivered to the client at all.
+code at runtime, and the level's passage was never delivered to the client at all.
 
 The four regions, and why each one is here rather than in a fetch:
 
@@ -22,8 +22,13 @@ The four regions, and why each one is here rather than in a fetch:
    `expected_z`, with `g_digest`, and with the scoreboard.
 3. `#face` `--init-x` / `--init-n` — the needle and the fill, so the instrument
    reads `expected_z` before any network call and before any JS.
-4. `#num` / `#stateword` / `data-below` — the same number in text, and the
-   right word next to it.
+4. `#num` / `#stateword` / `data-below` — the same number in text, the right
+   word next to it, and the below-the-line state on every element that is
+   styled by it. The number is POINTS (§11), not z: `format_points` here and
+   `formatPoints` in `web/src/game/needle.ts` must agree exactly, or the
+   server-rendered first paint disagrees with the first client repaint — and
+   `data-below` must reach the SAME SIX elements `needle.ts` marks, or the two
+   paints disagree about which side of the line the reading is on.
 
 Every substitution asserts it matched exactly once. A build whose markup drifted
 must fail loudly here, not ship a page that silently renders the fixture again.
@@ -33,39 +38,55 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from typing import Any
 
 from launder_core.gates.feedback import CopyBook
 from launder_core.schemas import LevelConfig, PassagePublic
-from launder_serve.content import DEV_PASSAGE_ID, Content, DailySlotSpec, PassageBundle
+from launder_serve.content import Content, PassageBundle
 from launder_serve.engine import ServerDetector, text_hash
 
 __all__ = [
     "BOOT_SCHEMA",
+    "POINTS_MAX",
+    "POINTS_MIN",
     "BootRenderer",
     "MissingRegion",
     "build_boot_payload",
+    "format_points",
+    "points",
     "render_index",
 ]
 
 _log = logging.getLogger("launder.boot")
 
-BOOT_SCHEMA = "launder.boot/1"
+BOOT_SCHEMA = "launder.boot/2"
 
 BOOT_OPEN = "<!-- LAUNDER:BOOT -->"
 BOOT_CLOSE = "<!-- /LAUNDER:BOOT -->"
 TEXT_OPEN = "<!-- LAUNDER:TEXT -->"
 TEXT_CLOSE = "<!-- /LAUNDER:TEXT -->"
 
-#: The printed scale of the meter (§10.5). Mirrored in `index.html`'s
-#: `aria-valuemin`/`aria-valuemax`, which this module rewrites from these two.
+#: The INTERNAL scale of the instrument, in z (§10.5). Geometry, thresholds, the
+#: wire and the DB are all still z; only the printed number is points.
 SCALE_MIN = -2.0
 SCALE_MAX = 10.0
+
+#: The DISPLAYED scale (§11). z is a statistic nobody can place and -2..10 reads
+#: as broken, so the readout is a monotone relabelling of z onto 0..100.
+#: Mirrored in `index.html`'s `aria-valuemin`/`aria-valuemax`, which this module
+#: rewrites from these two, and in `web/src/game/needle.ts`.
+#:
+#: It is NEVER rendered with a `%` sign and never called a percentage: the
+#: standing rule for `[readout]` is that the product never shows a "% AI"
+#: figure, and a number that looks like one would break it. This is the
+#: "Watermark evidence" meter, not a probability.
+POINTS_MIN = 0
+POINTS_MAX = 100
 
 #: `data/assets` filenames the browser needs for the LOCAL detector. Absent
 #: files mean `assets: null`, which is M2 — the server-detect game, complete and
@@ -199,12 +220,11 @@ def build_boot_payload(
     content: Content,
     detector: ServerDetector,
     bundle: PassageBundle,
-    level: LevelConfig,
-    day: date,
-    puzzle_number: int,
+    ruleset: LevelConfig,
+    level_n: int,
     dev: bool,
 ) -> dict[str, Any]:
-    """The `launder.boot/1` object `web/src/state.ts` parses. One place."""
+    """The `launder.boot/2` object `web/src/state.ts` parses. One place."""
     public = bundle.public
     reading = _reading_wire(detector, public.text, public)
     intro = (
@@ -218,10 +238,14 @@ def build_boot_payload(
     return {
         "schema": BOOT_SCHEMA,
         "dev": dev,
-        "day": day.isoformat(),
-        "puzzle_number": puzzle_number,
+        # The player's position in the campaign, and the total it is shown
+        # against ("Level 3 of 15"). Both are rendered server-side into the rail
+        # head by the client from these two numbers — there is no date, no
+        # puzzle number and nothing that rolls over.
+        "level_n": level_n,
+        "level_count": content.level_count,
         "passage_id": public.id,
-        "level": _level_wire(level),
+        "level": _level_wire(ruleset),
         "par": bundle.par,
         "asset_bundle_id": content.asset_bundle_id,
         "wm_config_id": content.wm_config_id,
@@ -291,11 +315,39 @@ def _pct(z: float) -> float:
     return max(0.0, min(100.0, ((z - SCALE_MIN) / span) * 100.0))
 
 
-def format_z(z: float) -> str:
-    """`z.toFixed(2)`. Two decimals because z* is 2.3263 and one decimal would
-    print "2.3" on both sides of the line — the readout must never disagree with
-    the verdict (`web/src/game/needle.ts`)."""
-    return f"{z:.2f}"
+def _round_half_up(value: float) -> int:
+    """`Math.round`, not Python's `round`.
+
+    Python rounds halves to EVEN and JavaScript rounds them UP, so a z landing
+    exactly on x.5 points would print 36 here and 37 in `needle.ts` — the
+    server-rendered first paint disagreeing with the first client repaint by
+    one, on one passage in a hundred, which is the hardest kind of disagreement
+    to ever notice.
+    """
+    return math.floor(value + 0.5)
+
+
+def points(z: float, z_star: float) -> int:
+    """z relabelled onto 0..100 for display (§11). A monotone map, not a probability.
+
+    The side of the line WINS OVER THE ROUNDING. Rounding can put a z that is
+    above the notch onto the same integer as the notch itself, which is exactly
+    the "2.3 on both sides" bug that the two-decimal z display was introduced to
+    avoid — and a readout that disagrees with the verdict is the one
+    disagreement this game cannot survive.
+    """
+    p_star = _round_half_up(_pct(z_star))
+    p = max(POINTS_MIN, min(POINTS_MAX, _round_half_up(_pct(z))))
+    if z > z_star and p <= p_star:
+        p = min(p_star + 1, POINTS_MAX)
+    if z <= z_star and p > p_star:
+        p = p_star
+    return p
+
+
+def format_points(z: float, z_star: float) -> str:
+    """The readout's text. A whole number, never a decimal and never a `%`."""
+    return str(points(z, z_star))
 
 
 def render_index(
@@ -308,7 +360,11 @@ def render_index(
     expected_z = float(payload["detector"]["expected_z"])
     z_star = float(payload["detector"]["z_star"])
     below = expected_z <= z_star
+    # The GEOMETRY is still z: `--init-x`/`--init-n` are the needle's position
+    # along the -2..10 scale and are already percentages. Only the printed
+    # number is points.
     pct = _pct(expected_z)
+    readout = format_points(expected_z, z_star)
 
     html = _replace_region(
         template,
@@ -337,46 +393,53 @@ def render_index(
         lambda m: f"{m.group(1)}--init-x: {pct:.4f}%; --init-n: {pct / 100.0:.4f}{m.group(2)}",
         "#face --init-x/--init-n",
     )
+    below_attr = ' data-below="1"' if below else ""
     html = _sub_once(
         html,
-        r'(<span class="num" id="num" data-pending=")1(">)[^<]*(</span>)',
-        lambda m: f"{m.group(1)}0{m.group(2)}{format_z(expected_z)}{m.group(3)}",
+        r'(<span class="num" id="num" data-pending=")1(")(>)[^<]*(</span>)',
+        lambda m: f"{m.group(1)}0{m.group(2)}{below_attr}{m.group(3)}{readout}{m.group(4)}",
         "#num readout",
     )
     html = _sub_once(
         html,
         r'(<span class="stateword" id="stateword" data-copy=")readout\.above(")',
-        lambda m: (
-            f"{m.group(1)}readout.{'below' if below else 'above'}{m.group(2)}"
-            + (' data-below="1"' if below else "")
-        ),
+        lambda m: f"{m.group(1)}readout.{'below' if below else 'above'}{m.group(2)}{below_attr}",
         "#stateword",
     )
-    # The fill bar and the notch are the same instrument and carry the same
-    # state; leaving them hot under a cold needle is a lie for one frame.
+    # ALL SIX ELEMENTS `needle.ts` marks, or none of them. `writeReadout()` sets
+    # `data-below` on #num, #stateword, #fill, #notch, #tri and #floorlbl, and
+    # rail.css styles `.num`, `.tri` and `.floorlbl` on that attribute — so a
+    # server paint that marked only three of the six rendered the number in the
+    # DETECTED colour beside the word "Not detected" until the first client
+    # repaint. That one-frame contradiction is exactly what painting the state
+    # server-side exists to prevent, so the two lists must not drift apart.
     if below:
-        html = _sub_once(
-            html, r'(<div class="fill" id="fill")(></div>)', r'\1 data-below="1"\2', "#fill"
-        )
-        html = _sub_once(
-            html, r'(<div class="notch" id="notch")(></div>)', r'\1 data-below="1"\2', "#notch"
-        )
+        for element, pattern in (
+            ("#fill", r'(<div class="fill" id="fill")(></div>)'),
+            ("#notch", r'(<div class="notch" id="notch")(></div>)'),
+            ("#tri", r'(<div class="tri" id="tri")(></div>)'),
+            ("#floorlbl", r'(<div class="floorlbl" id="floorlbl")(></div>)'),
+        ):
+            html = _sub_once(html, pattern, r'\1 data-below="1"\2', element)
+    # A screen reader is told the same number the sighted player is shown, on
+    # the same scale: announcing z against a 0..100 meter would describe an
+    # instrument nobody else can see.
     html = _sub_once(
         html,
         r'(aria-valuemin=")[^"]*(")',
-        lambda m: f"{m.group(1)}{SCALE_MIN:g}{m.group(2)}",
+        lambda m: f"{m.group(1)}{POINTS_MIN}{m.group(2)}",
         "meter aria-valuemin",
     )
     html = _sub_once(
         html,
         r'(aria-valuemax=")[^"]*(")',
-        lambda m: f"{m.group(1)}{SCALE_MAX:g}{m.group(2)}",
+        lambda m: f"{m.group(1)}{POINTS_MAX}{m.group(2)}",
         "meter aria-valuemax",
     )
     html = _sub_once(
         html,
         r'(aria-valuenow=")[^"]*(")',
-        lambda m: f"{m.group(1)}{format_z(expected_z)}{m.group(2)}",
+        lambda m: f"{m.group(1)}{readout}{m.group(2)}",
         "meter aria-valuenow",
     )
     return html
@@ -404,17 +467,21 @@ def _textarea_with(html: str, passage_text: str) -> str:
 
 @dataclass
 class _Cached:
-    key: tuple[str, str, str, float]
+    key: tuple[int, str, str, float]
     html: str
 
 
 class BootRenderer:
-    """Holds the template and caches one rendered page per (day, passage, level).
+    """Holds the template and caches the rendered page for each level.
 
     The template is re-read whenever `index.html`'s mtime changes, so `npm run
-    dev`-style rebuilds are picked up without a restart, and the render is
-    cached because the pristine reading costs a tokenize plus a score and the
-    passage does not change within a day.
+    dev`-style rebuilds are picked up without a restart, and the renders are
+    cached because the pristine reading costs a tokenize plus a score and a
+    level's passage never changes at all.
+
+    The cache is a dict keyed by level rather than one slot: the campaign is
+    linear and players are spread across all of it, so a single-entry cache
+    would thrash on every other request and re-tokenize a passage per hit.
     """
 
     def __init__(self, dist: Path, content: Content, detector: ServerDetector) -> None:
@@ -423,7 +490,7 @@ class BootRenderer:
         self.detector = detector
         self._template: str | None = None
         self._template_mtime = -1.0
-        self._cached: _Cached | None = None
+        self._cached: dict[int, _Cached] = {}
 
     def available(self) -> bool:
         return self.index.is_file()
@@ -440,74 +507,36 @@ class BootRenderer:
         if self._template is None or mtime != self._template_mtime:
             self._template = self.index.read_text(encoding="utf-8")
             self._template_mtime = mtime
-            self._cached = None
+            self._cached.clear()
         return self._template
 
-    def slot_for(self, day: date) -> tuple[DailySlotSpec | None, PassageBundle | None]:
-        slot = self.content.schedule.for_date(day)
-        if slot is not None:
-            bundle = self.content.passage(slot.passage_id)
-            if bundle is not None:
-                return slot, bundle
-        # No scheduled passage for today. Fall back to the intro slot, then to
-        # the dev fixture — which is what a fresh clone has, because
-        # `data/passages/` cannot be filled without a GPU and the gated Gemma-3
-        # weights. Both fallbacks render `dev: true` and neither is a daily.
-        intro = self.content.schedule.intro
-        for passage_id, level_id in (
-            (intro.passage_id, intro.level_id),
-            (DEV_PASSAGE_ID, intro.level_id),
-        ):
-            bundle = self.content.passage(passage_id)
-            if bundle is not None:
-                return (
-                    DailySlotSpec(
-                        date=day,
-                        passage_id=passage_id,
-                        level_id=bundle.public.level_id or level_id,
-                        notes="fallback",
-                    ),
-                    bundle,
-                )
-        return None, None
+    def render(self, level_n: int) -> str | None:
+        """The page for one level, or `None` when there is nothing to render.
 
-    def render(self, day: date) -> str | None:
-        """The rendered page, or `None` when there is nothing to render."""
+        `None` means the campaign is empty — no packed passages and no dev
+        fixture. An out-of-range `level_n` never reaches here: `main` resolves
+        the request to a level that exists before asking for a render.
+        """
         if not self.available():
             return None
-        slot, bundle = self.slot_for(day)
-        if slot is None or bundle is None:
+        resolved = self.content.resolve(level_n)
+        if resolved is None:
             return None
-        level = self.content.level(slot.level_id)
-        if level is None:
-            raise MissingRegion(
-                f"schedule maps {day.isoformat()} to level {slot.level_id!r}, which "
-                "levels.toml does not define. load_content should have caught this at boot."
-            )
+        bundle, ruleset = resolved
         template = self.template()
-        key = (day.isoformat(), bundle.id, level.id, self._template_mtime)
-        cached = self._cached
+        key = (level_n, bundle.id, ruleset.id, self._template_mtime)
+        cached = self._cached.get(level_n)
         if cached is not None and cached.key == key:
             return cached.html
 
-        dev = slot.notes == "fallback"
         payload = build_boot_payload(
             content=self.content,
             detector=self.detector,
             bundle=bundle,
-            level=level,
-            day=day,
-            # A fallback page is not day N of anything. `puzzle_number` is
-            # `(day - epoch).days + first_number`, which for a date before the
-            # epoch is negative and would render "Launder #-15" into a share
-            # string. Dev pages get the first number and say `dev: true`.
-            puzzle_number=(
-                self.content.schedule.first_number
-                if dev
-                else self.content.schedule.puzzle_number(day)
-            ),
-            dev=dev,
+            ruleset=ruleset,
+            level_n=level_n,
+            dev=self.content.dev,
         )
         html = render_index(template, payload=payload, passage_text=bundle.public.text)
-        self._cached = _Cached(key=key, html=html)
+        self._cached[level_n] = _Cached(key=key, html=html)
         return html

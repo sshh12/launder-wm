@@ -14,9 +14,9 @@ suite is what keeps them honest:
 | Integer width   | `BigInteger` for anything that counts events           |
 | `LIKE`          | never used — we hash submissions, we don't search them |
 
-`func.now()` is deliberately absent: it is the *server* clock, it differs
-across engines, and the daily rollover is a UTC-midnight product rule rather
-than whatever the database thinks the time is.
+`func.now()` is deliberately absent: it is the *server* clock and it differs
+across engines, so every timestamp here is written from Python as
+`datetime.now(UTC)`.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 __all__ = [
     "METADATA",
-    "daily_slot",
     "judge_cache",
+    "progress",
     "spend_ledger",
     "submission",
 ]
@@ -40,15 +40,16 @@ _BIGPK = sa.BigInteger().with_variant(sa.Integer(), "sqlite")
 _JSON = sa.JSON().with_variant(JSONB, "postgresql")
 
 
-daily_slot = sa.Table(
-    "daily_slot",
+progress = sa.Table(
+    "progress",
     METADATA,
-    sa.Column("day", sa.Date(), primary_key=True),
-    sa.Column("passage_id", sa.Text(), nullable=False),
-    sa.Column("level_id", sa.Text(), nullable=False),
-    sa.Column("authored_par", sa.Integer(), nullable=True),
-    # Best clear in the first N plays; self-balancing (§9.1).
-    sa.Column("observed_par", sa.Integer(), nullable=True),
+    # localStorage uuid. NOT identity. NOT trusted. `crypto.randomUUID()` is 36
+    # characters, so the column is sized for the hyphenated form and not for the
+    # 32-char hex one.
+    sa.Column("session_id", sa.String(64), primary_key=True),
+    sa.Column("level_n", sa.Integer(), primary_key=True),
+    # The BEST clear, not the latest: the upsert keeps the lower value.
+    sa.Column("distance", sa.Integer(), nullable=False),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
 )
 
@@ -57,7 +58,9 @@ submission = sa.Table(
     "submission",
     METADATA,
     sa.Column("id", _BIGPK, primary_key=True, autoincrement=True),
-    sa.Column("day", sa.Date(), nullable=False),
+    # The campaign position, 1..level_count. There is no date on a submission:
+    # a level is a place in an ordered campaign, not a day.
+    sa.Column("level_n", sa.Integer(), nullable=False),
     sa.Column("passage_id", sa.Text(), nullable=False),
     sa.Column("level_id", sa.Text(), nullable=False),
     # sha256(normalized)
@@ -78,12 +81,14 @@ submission = sa.Table(
     sa.Column("failure_code", sa.Text(), nullable=True),
     sa.Column("scoring_version", sa.Text(), nullable=False),
     sa.Column("wm_config_id", sa.Text(), nullable=False),
-    # localStorage uuid. NOT identity. NOT trusted.
-    sa.Column("session_id", sa.String(32), nullable=True),
+    # localStorage uuid. NOT identity. NOT trusted. 64, matching `progress`: the
+    # client's `crypto.randomUUID()` is 36 characters and a 32-char column
+    # rejected every submit that carried one, on Postgres only.
+    sa.Column("session_id", sa.String(64), nullable=True),
     sa.Column("elapsed_ms", sa.BigInteger(), nullable=True),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-    sa.Index("submission_board_idx", "day", "level_id", "cleared", "distance"),
-    sa.Index("submission_dedup_idx", "day", "level_id", "text_hash", unique=True),
+    sa.Index("submission_board_idx", "level_n", "cleared", "distance"),
+    sa.Index("submission_dedup_idx", "level_n", "text_hash", unique=True),
 )
 
 
@@ -112,6 +117,8 @@ judge_cache = sa.Table(
 spend_ledger = sa.Table(
     "spend_ledger",
     METADATA,
+    # A BILLING day — the calendar day the judge's USD cap resets on. It is the
+    # only `day` left in the schema and it has nothing to do with the campaign.
     sa.Column("day", sa.Date(), primary_key=True),
     sa.Column("spent_usd", sa.Numeric(10, 6), nullable=False),
 )

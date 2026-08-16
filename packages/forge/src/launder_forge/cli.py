@@ -15,7 +15,6 @@ matters in CI, where 2 means "not attempted here" and 1 means "broken".
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -27,7 +26,7 @@ from launder_forge.paths import repo_paths
 
 app = typer.Typer(
     name="forge",
-    help="Launder LM authoring studio — generate, analyze, solve, triage, calibrate, pack.",
+    help="Launder WM authoring studio — generate, analyze, solve, triage, calibrate, pack.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -699,7 +698,7 @@ def calibrate(
 
 
 # ---------------------------------------------------------------------------
-# pack / publish — the M4-M7 content path (§6.4, §12 row 15)
+# pack — the M4-M7 content path (§6.4)
 # ---------------------------------------------------------------------------
 
 
@@ -719,7 +718,7 @@ def _load_candidate(candidates: Path, candidate_id: str) -> dict[str, Any]:
 
 @app.command("pack")
 def pack_cmd(
-    passage_id: Annotated[str, typer.Argument(help="The id to publish under, e.g. p_2026-09-01")],
+    passage_id: Annotated[str, typer.Argument(help="The id to pack under, e.g. p07")],
     level: Annotated[str, typer.Option(help="Level id from data/config/levels.toml")],
     candidates: Annotated[
         Path | None, typer.Option("--in", help="candidates jsonl holding --candidate")
@@ -739,8 +738,15 @@ def pack_cmd(
 
     `pack.py` has always held the real implementation and the four hard gates;
     it had no entry point, so there was NO SUPPORTED WAY TO ADD A PASSAGE and
-    `data/passages/` shipped empty — which is why `/api/daily` 404s against the
-    committed tree. This is that entry point.
+    `data/passages/` shipped empty — which is why the server had nothing to
+    serve against the committed tree. This is that entry point.
+
+    Packing is HALF of adding a level. The campaign is the ordered
+    `[[level]]` list in `data/config/progression.toml`, hand-edited: a packed
+    passage nothing points at is never played, and a `[[level]]` block naming a
+    passage that was never packed is a boot failure (`strict = true`), which is
+    the point — a hole in a 15-level campaign is a broken build, not a skipped
+    day.
 
     The four gates are `pack_passage`'s, not this function's: `encode(text) ==
     token_ids`, the detector expectations RECOMPUTED (never copied from the
@@ -826,150 +832,10 @@ def pack_cmd(
     for kind, path in written.items():
         _info(f"{kind}: {paths.rel(path)}")
     _ok(f"packed {passage_id}")
-    _info("`forge manifest --write` next: asset_bundle_id and the blake3 record change with it")
-
-
-@app.command("publish")
-def publish_cmd(
-    date_: Annotated[str, typer.Option("--date", help="UTC date, YYYY-MM-DD")],
-    passage_id: Annotated[str, typer.Option("--passage-id", help="An already-packed passage")] = "",
-    candidate: Annotated[str, typer.Option(help="Pack this candidate first")] = "",
-    candidates: Annotated[Path | None, typer.Option("--in", help="candidates jsonl")] = None,
-    level: Annotated[str, typer.Option(help="Level id; defaults to the packed passage's")] = "",
-    notes: Annotated[str, typer.Option(help="Authoring scratch; never reaches the client")] = "",
-    force: Annotated[bool, typer.Option(help="Replace an existing day")] = False,
-) -> None:
-    """Schedule a packed passage for a date: one `[[day]]` line in schedule.toml.
-
-    §12 row 15 says "run `forge publish --date ... --candidate ...`; writes 2
-    files + a schedule line". The command did not exist, so there was no
-    supported way to make a passage the daily.
-
-    The write is validated by RELOADING the file through `ScheduleFile` and
-    `load_content`'s own rules before it is kept: a schedule that would 500 at
-    play time (a day before the epoch, a level that does not exist, a passage
-    that was never packed) is refused here.
-    """
-    from datetime import date as date_type
-
-    from launder_core.schemas import LevelsFile, PassagePublic
-
-    paths = repo_paths()
-    try:
-        day = date_type.fromisoformat(date_)
-    except ValueError as exc:
-        raise typer.BadParameter(f"--date {date_!r} is not an ISO date (YYYY-MM-DD)") from exc
-
-    if candidate:
-        if candidates is None:
-            raise typer.BadParameter("--candidate needs --in <candidates.jsonl>")
-        if not passage_id:
-            passage_id = f"p_{day.isoformat()}"
-        if not level:
-            raise typer.BadParameter("--candidate needs --level")
-        pack_cmd(
-            passage_id=passage_id,
-            level=level,
-            candidates=candidates,
-            candidate=candidate,
-            text_file=None,
-            claims_file=None,
-            par=0,
-            par_source="solver_upper",
-            force=force,
-        )
-    if not passage_id:
-        raise typer.BadParameter("pass --passage-id, or --candidate with --in")
-
-    public_path = paths.passages / f"{passage_id}.public.json"
-    if not public_path.exists():
-        _bad(f"{public_path} does not exist. Run `forge pack {passage_id} --level L2 ...` first.")
-        raise typer.Exit(EXIT_UNAVAILABLE)
-    public = PassagePublic.model_validate(json.loads(public_path.read_text(encoding="utf-8")))
-    level = level or public.level_id
-
-    levels = LevelsFile.model_validate(_read_toml(paths.levels_toml))
-    if level not in {lv.id for lv in levels.levels}:
-        _bad(f"{level} is not defined in {paths.rel(paths.levels_toml)}")
-        raise typer.Exit(EXIT_FAIL)
-
-    text = paths.schedule_toml.read_text(encoding="utf-8")
-    existing = re.search(
-        rf"^\[\[day\]\]\s*\ndate\s*=\s*{day.isoformat()}\s*$.*?(?=^\[\[|\Z)",
-        text,
-        re.M | re.S,
+    _info(
+        f"add a [[level]] block for {passage_id} to data/config/progression.toml, "
+        "then `forge manifest --write`: asset_bundle_id and the blake3 record change with it"
     )
-    block = (
-        "[[day]]\n"
-        f"date       = {day.isoformat()}\n"
-        f'passage_id = "{passage_id}"\n'
-        f'level_id   = "{level}"\n' + (f'notes      = "{notes}"\n' if notes else "")
-    )
-    if existing is not None:
-        if not force:
-            _bad(
-                f"schedule.toml already schedules {day.isoformat()}. Pass --force to replace it "
-                "— note that the day is what every share string for that puzzle refers to."
-            )
-            raise typer.Exit(EXIT_FAIL)
-        updated = text[: existing.start()] + block + "\n" + text[existing.end() :]
-    else:
-        updated = text.rstrip("\n") + "\n\n" + block
-
-    # VALIDATE BEFORE KEEPING. A schedule that 500s at play time on a date
-    # nobody tested is exactly what §7.6's "fail at boot" rule exists to stop.
-    backup = text
-    paths.schedule_toml.write_text(updated, encoding="utf-8", newline="\n")
-    try:
-        _reload_schedule(paths, day)
-    except Exception as exc:
-        paths.schedule_toml.write_text(backup, encoding="utf-8", newline="\n")
-        _bad(f"schedule.toml would not load with that day; reverted.\n{exc}")
-        raise typer.Exit(EXIT_FAIL) from exc
-
-    _ok(f"{day.isoformat()} -> {passage_id} ({level}) in {paths.rel(paths.schedule_toml)}")
-    _info("`forge manifest --write` and `forge verify` next")
-
-
-def _reload_schedule(paths: Any, new_day: Any) -> None:
-    """Re-parse the edited schedule and apply the server's own boot rules.
-
-    Deliberately NOT an import of `launder_serve`: forge does not depend on
-    serve (§2.1), and a forge-only install must still be able to publish. The
-    three rules below are the ones `content.ScheduleFile` and `load_content`
-    raise on, restated where they can run.
-    """
-    raw = _read_toml(paths.schedule_toml)
-    strict = bool(raw.get("strict", False))
-    epoch = raw["epoch"]
-    first = int(raw.get("first_number", 1))
-    seen: set[Any] = set()
-    for slot in raw.get("day", []):
-        day = slot["date"]
-        if day in seen:
-            raise ValueError(f"schedule.toml schedules {day} twice")
-        seen.add(day)
-        number = (day - epoch).days + first
-        if number < 1:
-            raise ValueError(
-                f"schedule.toml schedules {day} before its own epoch {epoch} "
-                f"(first_number={first}), giving puzzle number {number}. "
-                "DailyResponse.puzzle_number is ge=1, so that day would 500 the first "
-                "time somebody played it. Move the day, or move the epoch back — but "
-                "note that moving the epoch renumbers every share string ever posted."
-            )
-        # `strict = false` means an UNPACKED scheduled day is skipped with a
-        # boot warning, so only the day being published is required to exist —
-        # otherwise publishing one day would be blocked by every other day that
-        # has not been authored yet.
-        if not (strict or day == new_day):
-            continue
-        public = paths.passages / f"{slot['passage_id']}.public.json"
-        if not public.exists():
-            raise ValueError(
-                f"schedule.toml maps {day} -> {slot['passage_id']}, which has no "
-                f"{paths.rel(public)}. Pack it first."
-            )
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

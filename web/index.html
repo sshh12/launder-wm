@@ -6,16 +6,17 @@
          disabled, at any width (§10.3). -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <title>Launder LM</title>
+    <title>Launder WM</title>
     <script type="module" src="/src/main.ts"></script>
 
     <!--
       ============================================================
       SERVER TEMPLATE CONTRACT — launder_serve
       ============================================================
-      This file is the daily page. launder-serve rewrites exactly four
-      regions, each delimited by a comment pair or named below, and nothing
-      else:
+      This file is the level page: `GET /` picks which level to render from
+      `?level=`, then the `launder_level` cookie, then 1. launder-serve
+      rewrites exactly four regions, each delimited by a comment pair or
+      named below, and nothing else:
 
         1. LAUNDER:BOOT   the JSON payload below — the level, the detector
                           expectation, the pristine reading, the primer's
@@ -28,11 +29,16 @@
                           HTML parser eats one newline directly after the
                           start tag, and the player would silently begin from
                           a different string than the one the server scored.
-        3. #face style    --init-x (px offset of the needle) and --init-n
-                          (0..1 fill), so the instrument reads the passage's
-                          expected_z before any network call and before any
-                          JS (§5.4 step 1).
-        4. #num text      the same expected_z, formatted to 2dp, and
+        3. #face style    --init-x (the needle's position as a PERCENTAGE of
+                          the face) and --init-n (0..1 fill), so the instrument
+                          reads the passage's expected_z before any network
+                          call and before any JS (§5.4 step 1). A percentage
+                          because the face's width is layout-dependent and the
+                          server cannot know it: the only px offset it could
+                          honestly write was 0, i.e. a needle pinned to the
+                          left edge for the whole pre-JS frame.
+        4. #num text      the same expected_z as 0-100 POINTS (the needle's
+                          only displayed number; z stays internal), and
                           #stateword's data-copy flipped to readout.below
                           when the passage already sits under z*.
 
@@ -46,16 +52,21 @@
       data/dev/passage.txt and the real strings from data/config/copy.toml,
       with dev:true, no reading and expected_z 0 — because a reading is a
       detector output and this repo will not ship an invented one.
-      web/tests/boot.test.ts fails if the inlined copy drifts from
-      data/config/copy.toml.
+      It is "level 1 of 1" because that is the ONLY campaign dev:true can
+      describe: `dev` is set exactly when data/passages/ is empty and
+      data/dev/passage.txt stands in as the whole campaign. A fixture claiming
+      dev:true alongside a fifteen-level campaign is a page the server can
+      never render, and a fixture nobody can reproduce is a fixture nobody can
+      debug against. web/tests/boot.test.ts fails if the inlined copy drifts
+      from data/config/copy.toml.
     -->
     <!-- LAUNDER:BOOT -->
     <script type="application/json" id="launder-boot">
 {
-"schema": "launder.boot/1",
+"schema": "launder.boot/2",
 "dev": true,
-"day": "2026-09-01",
-"puzzle_number": 212,
+"level_n": 1,
+"level_count": 1,
 "passage_id": "p_dev",
 "level": {
 "id": "L2",
@@ -122,16 +133,15 @@
 "copy": {
 "primer": {
 "lede_1": "This text is watermarked.",
-"body_1": "When an AI writes, many words would fit in each spot. A watermark makes it choose them in a secret pattern. The text reads normally, but a detector that knows the pattern can find it.",
+"body_1": "Watermarking makes language models choose words in a secret pattern. The text reads normally, but a detector that knows the pattern can find it.",
 "demo": "The committee met on Thursday to consider whether the proposal deserved another year of funding.",
-"cap": "The stain is strongest where many words could have fit — not where words look clever.",
 "lede_2": "Your job: wash it out.",
 "body_2": "Move the needle below the line. Use as few word changes as you can. The text must still read well and mean the same.",
 "open_label": "What is this?",
 "close_label": "Start"
 },
 "readout": {
-"above": "AI detected",
+"above": "AI watermark detected",
 "below": "Not detected",
 "threshold_label": "Under {z_star_display} to clear",
 "meter_name": "Watermark evidence",
@@ -141,11 +151,18 @@
 "distance_zero": "nothing changed",
 "cleared_toast": "Cleared in {distance}",
 "provisional_note": "Gate unavailable — this one does not count.",
-"share_template": "Launder #{puzzle_number} — cleared in {distance} 🧼"
+"share_template": "Launder WM — level {level_n} cleared in {distance} 🧼",
+"share_all_template": "Launder WM 🧼\nCleared all {level_count} levels — {total} words changed\n{per_level}\n{url}"
 },
 "screen": {
 "action": "Check",
-"rollover_note": "New passage at midnight UTC"
+"level_label": "Level {n} of {total}",
+"next_label": "Next level",
+"all_clear": "That was the last level. You cleared every one.",
+"credit": "Made by @ShrivuShankar",
+"source": "Source",
+"copy_label": "Copy",
+"close_label": "Close"
 },
 "check": {
 "unicode_sanitation": {
@@ -196,7 +213,7 @@
 "reject": "This did not pass the reading check.",
 "reject_by_code": {
 "meaning_drift": "Meaning drifted — you dropped the claim about {claim_label}.",
-"meaning_inverted": "Meaning flipped — the original says {claim_label}, yours doesn't.",
+"meaning_inverted": "Meaning flipped — you reversed the claim about {claim_label}.",
 "meaning_added": "You added something the original never says: \"{added}\".",
 "injection_attempt": "Nice try. The judge reads your text, it doesn't take orders from it."
 },
@@ -221,7 +238,7 @@
 "network": "No connection. Your text is safe; try Check again.",
 "rate_limited": "Too many checks. Try again in {retry_after_s} seconds.",
 "too_long": "That text is too long to check.",
-"unknown_passage": "That passage is not the one running today.",
+"unknown_passage": "That level is not on this server. Reload the page.",
 "detector_offline": "The needle is reading from the server right now.",
 "detector_mismatch": "This build's detector does not match this passage. Reading from the server instead."
 },
@@ -232,8 +249,7 @@
 "hand_off": "Now wash one out."
 },
 "disclosure": {
-"l6_regen": "These four texts were generated ahead of time on the author's RTX 5090 — Railway has no GPU. The generation is real; the detector reading you're watching is live, right now, in your browser, with the same key that flagged every other level.",
-"keys_published": "The keys are published. That makes this watermark real, not secure — you can check every number here yourself."
+"l6_regen": "These four texts were generated ahead of time on the author's RTX 5090 — Railway has no GPU. The generation is real; the detector reading you're watching is live, right now, in your browser, with the same key that flagged every other level."
 }
 }
 }
@@ -250,27 +266,30 @@
         </div>
 
         <div class="railhead">
-          <span class="daily" id="daily"></span>
+          <span class="levelno" id="levelno"></span>
           <button class="whatbtn" id="whatbtn" type="button" data-copy-aria="primer.open_label">
             ?
           </button>
-          <span class="lvlchip" id="lvlchip"><em id="lvlid"></em> <span id="lvlname"></span></span>
+          <span class="lvlchip" id="lvlchip"><span id="lvlname"></span></span>
           <div class="readout">
-            <span class="num" id="num" data-pending="1">0.00</span>
+            <span class="num" id="num" data-pending="1">17</span>
             <span class="stateword" id="stateword" data-copy="readout.above"></span>
           </div>
         </div>
 
+        <!-- The meter speaks in points, so its bounds are 0..100. z is the
+             statistic and stays internal; a scale printed -2..10 reads as a
+             broken instrument, and a spoken "-2" is worse. -->
         <div
           class="meter"
           id="meter"
           role="meter"
-          aria-valuemin="-2"
-          aria-valuemax="10"
-          aria-valuenow="0"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="17"
           data-copy-aria="readout.meter_name"
         >
-          <div class="face" id="face" style="--init-x: 0px; --init-n: 0">
+          <div class="face" id="face" style="--init-x: 16.6667%; --init-n: 0.1667">
             <div class="track"></div>
             <div class="fill" id="fill"></div>
             <div class="notch" id="notch"></div>
@@ -361,7 +380,26 @@
         </aside>
       </div>
 
-      <div class="foot" data-copy="screen.rollover_note"></div>
+      <!-- The credit line. Two real links, both filled from copy.toml and both
+           `rel="noopener"`, because `target="_blank"` without it hands the new
+           tab a window.opener handle back into this document. -->
+      <div class="foot">
+        <a
+          class="credit"
+          href="https://x.com/ShrivuShankar"
+          target="_blank"
+          rel="noopener"
+          data-copy="screen.credit"
+        ></a>
+        <span class="footsep" aria-hidden="true">·</span>
+        <a
+          class="credit"
+          href="https://github.com/sshh12/launder-wm"
+          target="_blank"
+          rel="noopener"
+          data-copy="screen.source"
+        ></a>
+      </div>
     </main>
 
     <div class="scrim" id="scrim" data-open="0"></div>
@@ -377,7 +415,7 @@
     >
       <div class="sheetin">
         <div class="sheethead">
-          <span class="sheettitle" id="prt">Launder LM</span>
+          <span class="sheettitle" id="prt">Launder WM</span>
           <button class="x" type="button" data-close data-copy-aria-opt="screen.close_label">
             ×
           </button>
@@ -390,16 +428,13 @@
              key. With no reading in the boot payload this renders unstained
              rather than inventing one (§10.7). -->
         <div class="pr-demo"><div class="mirror" id="mirrorPrimer" data-visible="1"></div></div>
-        <p class="pr-cap" data-copy="primer.cap"></p>
 
         <p class="pr-lede" data-copy="primer.lede_2"></p>
         <p class="pr-body" data-copy="primer.body_2"></p>
 
         <div class="pr-foot">
-          <span class="pr-daily" data-copy="screen.rollover_note"></span>
           <button class="btn" id="prplay" type="button" data-copy="primer.close_label"></button>
         </div>
-        <p class="pr-cap" data-copy="disclosure.keys_published"></p>
       </div>
     </div>
 
@@ -473,7 +508,12 @@
         <div class="lbl" data-copy-opt="screen.diff_label"></div>
         <div class="diff" id="rdiff"></div>
         <div class="sharebox" id="rshare"></div>
-        <div class="actions">
+        <!-- On the last level #nextlvl has nowhere to go: it is hidden and this
+             takes its place, above the same share box, which by then holds the
+             whole campaign instead of one level. -->
+        <p class="allclear" id="rallclear" hidden data-copy="screen.all_clear"></p>
+        <div class="actions" id="ractions">
+          <button class="btn" id="nextlvl" type="button" data-copy="screen.next_label"></button>
           <button class="btn" id="copyres" type="button" data-copy-opt="screen.copy_label"></button>
         </div>
       </div>

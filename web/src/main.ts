@@ -28,8 +28,18 @@ import {
   layoutFromWords,
   reanchorTokens,
 } from "./game/mirror";
-import { Needle, formatZ } from "./game/needle";
+import { Needle, formatPoints } from "./game/needle";
 import { Primer, Sheets, safeStorage } from "./game/primer";
+import {
+  markCleared,
+  mergeCleared,
+  perLevelLine,
+  readProgress,
+  reconcile,
+  safeSession,
+  totalChanged,
+  writeLevelCookie,
+} from "./game/progress";
 import { DetectClient } from "./net/detect";
 import { sessionId, submitText } from "./net/submit";
 import {
@@ -38,6 +48,7 @@ import {
   readBoot,
   readingFromWire,
   type Boot,
+  type ProgressWire,
   type Reading,
   type TokenHeat,
 } from "./state";
@@ -95,11 +106,43 @@ function start(boot: Boot): void {
   const raw = must<HTMLTextAreaElement>("raw");
   const originalText = raw.value;
   const store = new Store(originalText);
+  const storage = safeStorage();
+  const session = safeSession();
+  const nav = { search: location.search, replace: (url: string) => location.replace(url) };
 
   /* ---- rail furniture that is data, not copy ---- */
-  must("daily").textContent = `#${boot.puzzle_number}`;
-  must("lvlid").textContent = boot.level.id;
+  // "Level 3 of 15". The ruleset id ("L1") is wire and DB vocabulary; the
+  // player is never shown it, because two numbering systems on one screen is
+  // how "level 3" and "level L1" ended up meaning different things.
+  must("levelno").textContent = copy.t("screen.level_label", {
+    n: boot.level_n,
+    total: boot.level_count,
+  });
   must("lvlname").textContent = boot.level.name;
+
+  /* ---- which level should be on screen (§7) --------------------------- *
+   * The server picked this page from the `launder_level` cookie, and the
+   * cookie can be missing (first visit), stale (cleared on another device) or
+   * unwritable. Reconciling can end in a reload, and we deliberately DO NOT
+   * bail out of start() when it does: the passage and the needle are already
+   * painted from the inlined boot payload, the reload takes a moment to
+   * commit, and a page that is dead for that moment is worse than one that
+   * finishes building and is then thrown away. If the navigation silently
+   * fails, the game is still fully playable on the level that is on screen.
+   * -------------------------------------------------------------------- */
+  reconcile({
+    storage,
+    session,
+    jar: document,
+    nav,
+    levelN: boot.level_n,
+    levelCount: boot.level_count,
+  });
+
+  // ONE relabelling, shared by the needle, the threshold label and the result
+  // sheet's big number: three places printing the same reading from three
+  // copies of the scale is three chances to disagree.
+  const pointsCfg = { zStar: boot.detector.z_star, scale: boot.detector.scale };
 
   const needle = new Needle(
     {
@@ -117,14 +160,12 @@ function start(boot: Boot): void {
       stateWord: must("stateword"),
       live: must("live"),
     },
-    { zStar: boot.detector.z_star, scale: boot.detector.scale, copy },
+    { ...pointsCfg, copy },
     boot.detector.expected_z,
   );
-  must("meter").setAttribute("aria-valuemin", String(boot.detector.scale.min));
-  must("meter").setAttribute("aria-valuemax", String(boot.detector.scale.max));
-  // "Under 2.33 to clear" — NOT "floor", which already means the word minimum.
+  // "Under 36 to clear" — NOT "floor", which already means the word minimum.
   must("floorlbl").textContent = copy.t("readout.threshold_label", {
-    z_star_display: formatZ(boot.detector.z_star),
+    z_star_display: formatPoints(boot.detector.z_star, pointsCfg),
   });
 
   // data-cleared means ONE thing: the needle is under the line. It is not the
@@ -161,11 +202,32 @@ function start(boot: Boot): void {
     resultSyms: must("rsyms"),
     resultDiff: must("rdiff"),
     resultShare: must("rshare"),
-    copyButton: document.getElementById("copyres") ?? document.createElement("button"),
+    resultActions: must("ractions"),
+    allClear: must("rallclear"),
+    nextButton: must("nextlvl"),
+    // `must`, not a detached fallback: #copyres carries `data-copy-opt`, so it
+    // only survives applyCopySlots while copy.toml defines `screen.copy_label`.
+    // A silent stand-in element let that key go missing and took the share's
+    // copy button with it — a listener bound to nothing, and no error anywhere.
+    copyButton: must("copyres"),
     checkButton: must<HTMLButtonElement>("check"),
     changed: [must("changed"), must("stripcount")],
     parLine: must("parline"),
   };
+
+  /** The whole campaign in one paste: every level's best distance, their sum,
+   *  and the origin the player is actually on — never a hardcoded domain, so a
+   *  preview deployment shares its own URL rather than advertising production. */
+  function campaignShare(): string {
+    const progress = readProgress(storage);
+    return copy.t("readout.share_all_template", {
+      level_count: boot.level_count,
+      total: totalChanged(progress, boot.level_count),
+      per_level: perLevelLine(progress, boot.level_count),
+      url: location.origin,
+    });
+  }
+
   const gate = new Gate({
     doc: document,
     els: gateEls,
@@ -174,6 +236,25 @@ function start(boot: Boot): void {
     par: boot.par,
     originalText,
     sheets,
+    points: pointsCfg,
+    levelN: boot.level_n,
+    levelCount: boot.level_count,
+    campaignShare,
+    onNext: (res) => {
+      // Both stores, in this order: the cookie decides what `GET /` renders and
+      // the record decides what the cookie should say next time. `assign`, not
+      // `replace` — the result sheet the player just read is a reasonable place
+      // for the back button to return to.
+      //
+      // Unconditional, unlike the submit path: a player who tapped a button
+      // labelled "next level" must arrive at the next level. If the gate was
+      // down and the clear was provisional, this is the one place that lets
+      // them past it — the SERVER's record still does not have the level, so
+      // nothing they carry to another device claims a clear that never ran.
+      markCleared(storage, boot.level_n, res.score.distance);
+      writeLevelCookie(document, Math.min(boot.level_n + 1, boot.level_count));
+      location.assign("/");
+    },
   });
 
   const primer = new Primer(
@@ -308,7 +389,6 @@ function start(boot: Boot): void {
   /* ---- submit --------------------------------------------------------- */
 
   const started = Date.now();
-  const storage = safeStorage();
   gateEls.checkButton.addEventListener("click", () => {
     void runSubmit();
   });
@@ -336,6 +416,14 @@ function start(boot: Boot): void {
     store.setOutcome(outcome.response);
     gate.setOutcome(outcome.response);
     if (outcome.response.cleared) {
+      // A PROVISIONAL clear is one the gate could not fully run, and it does not
+      // count — the server does not record it either, so neither do we. Recorded
+      // BEFORE the sheet opens, because the last level's share is built from
+      // this record and has to include the clear that just happened.
+      if (!outcome.response.provisional) {
+        markCleared(storage, boot.level_n, outcome.response.score.distance);
+        writeLevelCookie(document, Math.min(boot.level_n + 1, boot.level_count));
+      }
       gate.showResult(outcome.response, outcome.text);
     } else {
       gate.showRejection(outcome.response);
@@ -393,6 +481,42 @@ function start(boot: Boot): void {
   window.addEventListener("keydown", arm, { once: true });
 
   requestAnimationFrame(() => primer.openOnFirstLand(storage));
+
+  /* ---- the server's half of the progress record (§7 step 4) ----------- *
+   * localStorage is per-browser; the server's record is per-session-id, and
+   * the two disagree the moment somebody clears a phone's site data or opens
+   * the game in a second browser they had already used. Union the server's
+   * list in and run the SAME reconciliation again, sharing the same
+   * one-reload-per-tab budget so a disagreement can never cost two reloads.
+   *
+   * This is an upgrade, not a requirement: every failure path — no session id,
+   * offline, a 5xx, a body that is not what we expect — leaves the local
+   * record exactly as it was and the game exactly as playable.
+   * -------------------------------------------------------------------- */
+  async function syncProgress(): Promise<void> {
+    const sid = sessionId(storage);
+    if (sid === null) return;
+    try {
+      const res = await fetch(`/api/progress?session_id=${encodeURIComponent(sid)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const wire = (await res.json()) as ProgressWire;
+      if (!Array.isArray(wire.cleared)) return;
+      mergeCleared(storage, wire.cleared);
+      reconcile({
+        storage,
+        session,
+        jar: document,
+        nav,
+        levelN: boot.level_n,
+        levelCount: boot.level_count,
+      });
+    } catch {
+      /* the campaign is playable from localStorage alone */
+    }
+  }
+  void syncProgress();
 
   /* ---- SERVER -> LOADING -> LOCAL (§5.4) ------------------------------ *
    * The worker is only built if the boot payload names its assets. With no

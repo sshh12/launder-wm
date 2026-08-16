@@ -20,7 +20,7 @@ import httpx
 import pytest
 
 from launder_core.schemas import PassagePublic
-from launder_serve.content import Content, load_content
+from launder_serve.content import CampaignLevel, Content, load_content
 from launder_serve.judge.fake import FakeJudge
 from launder_serve.judge.gate import CachingJudge
 from launder_serve.limits import TokenBucketLimiter
@@ -110,20 +110,21 @@ def data_root(tmp_path: Path, real_data_root: Path) -> Path:
         shutil.copytree(real_data_root / "assets", root / "assets")
 
     # Load once with no passages to learn the ids the passages must declare.
+    # `progression.toml` is read from the real config, so the fixture campaign
+    # is exactly as long as the shipped one and `level_count` is not invented
+    # here — a hand-picked count would hide a renumbering mistake in the file.
     probe = load_content(root, is_production=False)
-    for slot in probe.schedule.days:
-        payload = _passage(
-            probe.wm_config_id, probe.asset_bundle_id, slot.passage_id, slot.level_id
-        )
-        (root / "passages" / f"{slot.passage_id}.public.json").write_text(
+    for spec in probe.progression.levels:
+        payload = _passage(probe.wm_config_id, probe.asset_bundle_id, spec.passage_id, spec.rules)
+        (root / "passages" / f"{spec.passage_id}.public.json").write_text(
             json.dumps(payload), encoding="utf-8"
         )
         # The packed sidecar the image actually ships (§11.3): claims + par only.
-        (root / "passages" / f"{slot.passage_id}.server.json").write_text(
+        (root / "passages" / f"{spec.passage_id}.server.json").write_text(
             json.dumps(
                 {
                     "schema": "launder.passage.server/1",
-                    "id": slot.passage_id,
+                    "id": spec.passage_id,
                     "claims": payload["claims"],
                     "par": payload["par"],
                 }
@@ -141,8 +142,8 @@ def settings(data_root: Path) -> Settings:
         judge_provider="fake",
         database_url="",
         git_sha="testsha0",
-        rate_limit_judge_per_hour=10,
-        rate_limit_judge_burst=3,
+        rate_limit_judge_per_hour=60,
+        rate_limit_judge_burst=10,
     )
 
 
@@ -176,7 +177,6 @@ def app(
 ) -> Any:
     gate = CachingJudge(
         provider=judge,
-        failover=None,
         cache=repos.judge_cache,
         spend=repos.spend,
         limiter=limiter,
@@ -207,18 +207,30 @@ async def client(app: Any) -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest.fixture
-def scheduled_day(content: Content) -> Any:
-    return content.schedule.days[0]
+def campaign_level(content: Content) -> CampaignLevel:
+    """A level in the MIDDLE of the campaign, not level 1.
+
+    Level 1 is the value every fallback in the resolver returns, so a test that
+    only ever renders level 1 passes just as well when level resolution is
+    broken in every direction.
+    """
+    assert content.campaign, "the fixture data root produced an empty campaign"
+    return content.campaign[min(2, len(content.campaign) - 1)]
 
 
 @pytest.fixture
-def passage_id(scheduled_day: Any) -> str:
-    return str(scheduled_day.passage_id)
+def level_n(campaign_level: CampaignLevel) -> int:
+    return campaign_level.n
 
 
 @pytest.fixture
-def level_id(scheduled_day: Any) -> str:
-    return str(scheduled_day.level_id)
+def passage_id(campaign_level: CampaignLevel) -> str:
+    return campaign_level.passage_id
+
+
+@pytest.fixture
+def level_id(campaign_level: CampaignLevel) -> str:
+    return campaign_level.level_id
 
 
 @pytest.fixture

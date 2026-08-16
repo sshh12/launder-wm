@@ -101,11 +101,30 @@ DERIVED_PARAMS: dict[str, frozenset[str]] = {
 #: Non-check sections and the context each is rendered against. `[primer]`,
 #: `[gate]` and `[disclosure]` are static prose and take no placeholders.
 SECTION_PARAMS: dict[str, frozenset[str]] = {
-    # `puzzle_number` belongs here because `share_template` is rendered in the
-    # same context as the readout it summarises.
-    "readout": frozenset({"z_display", "z_star_display", "distance", "n_words", "puzzle_number"}),
-    "screen": frozenset({"distance", "max_word_distance", "n_words", "min_words", "puzzle_number"}),
-    "errors": frozenset({"retry_after_s", "puzzle_number"}),
+    # `level_n`/`level_count` belong here because the two share strings are
+    # rendered in the same context as the readout they summarise: one names the
+    # level just cleared, the other the whole campaign (`total` moves, spread
+    # over `per_level`, plus the `url` to play it). They replace the old
+    # `puzzle_number`, which was the daily's number and no longer exists
+    # anywhere in the product — leaving it listed here would let a share string
+    # that still interpolates it lint clean and then render "Launder #{}".
+    "readout": frozenset(
+        {
+            "z_display",
+            "z_star_display",
+            "distance",
+            "n_words",
+            "level_n",
+            "level_count",
+            "total",
+            "per_level",
+            "url",
+        }
+    ),
+    # `n`/`total` are the level rail's "3 / 15": the screen chrome names the
+    # position, not the puzzle.
+    "screen": frozenset({"distance", "max_word_distance", "n_words", "min_words", "n", "total"}),
+    "errors": frozenset({"retry_after_s"}),
     "intro": frozenset({"n_words", "z_display"}),
     "gate": frozenset(),
     "primer": frozenset(),

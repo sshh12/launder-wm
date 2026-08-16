@@ -29,7 +29,11 @@ def _claim_vocabulary(passage: PassagePublic) -> list[str]:
 
 
 async def test_a_clean_solve_clears(
-    client: httpx.AsyncClient, judge: FakeJudge, passage_id: str, public_passage: PassagePublic
+    client: httpx.AsyncClient,
+    judge: FakeJudge,
+    passage_id: str,
+    level_n: int,
+    public_passage: PassagePublic,
 ) -> None:
     solved = launder(public_passage.text, protect=_claim_vocabulary(public_passage), edits=8)
     response = await client.post(
@@ -57,8 +61,11 @@ async def test_a_clean_solve_clears(
     assert len(body["score"]["ops"]) == 8
     assert {"op", "i", "j", "from", "to"} == set(body["score"]["ops"][0])
     assert body["detector"]["z"] <= body["detector"]["z_star"]
-    assert body["rank_today"] == 1
-    assert "8" in body["share"]
+    # Rank among the clears OF THIS LEVEL. There is no day to rank within.
+    assert body["rank"] == 1
+    assert "rank_today" not in body
+    assert "streak" not in body
+    assert body["share"] == f"Launder WM — level {level_n} cleared in 8 🧼"
     assert judge.calls == 1
 
 
@@ -193,7 +200,11 @@ async def test_the_request_model_rejects_client_supplied_scores(
 
 
 async def test_submit_is_never_cached_and_records_the_submission(
-    client: httpx.AsyncClient, repos: Any, passage_id: str, public_passage: PassagePublic
+    client: httpx.AsyncClient,
+    repos: Any,
+    passage_id: str,
+    level_n: int,
+    public_passage: PassagePublic,
 ) -> None:
     solved = launder(public_passage.text, protect=_claim_vocabulary(public_passage), edits=8)
     response = await client.post(
@@ -201,24 +212,24 @@ async def test_submit_is_never_cached_and_records_the_submission(
     )
     assert response.headers["cache-control"] == "no-store"
 
-    from launder_serve.api.deps import today_utc
-
-    rows = await repos.submissions.best_for_day(today_utc(), L2, 10)
+    rows = await repos.submissions.best_for_level(level_n, 10)
     assert len(rows) == 1
     assert rows[0].distance == response.json()["score"]["distance"]
 
 
 async def test_resubmitting_identical_text_does_not_double_the_leaderboard(
-    client: httpx.AsyncClient, repos: Any, passage_id: str, public_passage: PassagePublic
+    client: httpx.AsyncClient,
+    repos: Any,
+    passage_id: str,
+    level_n: int,
+    public_passage: PassagePublic,
 ) -> None:
     solved = launder(public_passage.text, protect=_claim_vocabulary(public_passage), edits=8)
     body = {"passage_id": passage_id, "level_id": L2, "text": solved}
     await client.post("/api/submit", json=body)
     await client.post("/api/submit", json=body)
 
-    from launder_serve.api.deps import today_utc
-
-    rows = await repos.submissions.best_for_day(today_utc(), L2, 10)
+    rows = await repos.submissions.best_for_level(level_n, 10)
     assert len(rows) == 1
 
 
@@ -228,3 +239,96 @@ async def test_unknown_level_is_404_not_500(client: httpx.AsyncClient, passage_i
         json={"passage_id": passage_id, "level_id": "L99", "text": "x " * 60},
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# progress
+# ---------------------------------------------------------------------------
+
+
+async def test_a_clear_with_a_session_id_records_progress(
+    client: httpx.AsyncClient,
+    repos: Any,
+    passage_id: str,
+    level_n: int,
+    public_passage: PassagePublic,
+) -> None:
+    """The server's durable half of the campaign, written on the clear itself.
+
+    localStorage is the fast copy and this is the one that survives a cleared
+    cache — but only a REAL clear writes it, and the level recorded is the
+    passage's position, never a number the client sent.
+    """
+    solved = launder(public_passage.text, protect=_claim_vocabulary(public_passage), edits=8)
+    response = await client.post(
+        "/api/submit",
+        json={
+            "passage_id": passage_id,
+            "level_id": L2,
+            "text": solved,
+            "session_id": "s_player",
+        },
+    )
+    assert response.json()["cleared"] is True
+    assert await repos.progress.cleared_levels("s_player") == [level_n]
+    # ...and it is readable straight back through the endpoint the client uses.
+    body = (await client.get("/api/progress", params={"session_id": "s_player"})).json()
+    assert body["cleared"] == [level_n]
+    assert body["unlocked"] == level_n + 1
+
+
+async def test_a_rejected_submit_records_no_progress(
+    client: httpx.AsyncClient, repos: Any, passage_id: str, public_passage: PassagePublic
+) -> None:
+    """A rejection is a game outcome, not an advance."""
+    soup = keyword_soup(public_passage.text)
+    response = await client.post(
+        "/api/submit",
+        json={
+            "passage_id": passage_id,
+            "level_id": L2,
+            "text": soup,
+            "session_id": "s_player",
+        },
+    )
+    assert response.json()["cleared"] is False
+    assert await repos.progress.cleared_levels("s_player") == []
+
+
+async def test_replaying_a_cleared_level_does_not_clear_it_twice(
+    client: httpx.AsyncClient,
+    repos: Any,
+    passage_id: str,
+    level_n: int,
+    public_passage: PassagePublic,
+) -> None:
+    """Progress is an upsert, so a player who comes back to improve a level
+    still has cleared it exactly once. (Which of the two distances survives is
+    the repository's rule, and `test_repo_contract` is where that is pinned.)"""
+    protect = _claim_vocabulary(public_passage)
+    for edits in (8, 11):
+        solved = launder(public_passage.text, protect=protect, edits=edits)
+        body = await client.post(
+            "/api/submit",
+            json={
+                "passage_id": passage_id,
+                "level_id": L2,
+                "text": solved,
+                "session_id": "s_best",
+            },
+        )
+        assert body.json()["cleared"] is True, body.text
+    assert await repos.progress.cleared_levels("s_best") == [level_n]
+
+
+async def test_a_clear_without_a_session_id_still_clears(
+    client: httpx.AsyncClient, repos: Any, passage_id: str, public_passage: PassagePublic
+) -> None:
+    """A player with localStorage disabled plays the whole campaign; they just
+    keep their progress nowhere but the cookie."""
+    solved = launder(public_passage.text, protect=_claim_vocabulary(public_passage), edits=8)
+    body = await client.post(
+        "/api/submit", json={"passage_id": passage_id, "level_id": L2, "text": solved}
+    )
+    assert body.json()["cleared"] is True
+    assert await repos.progress.cleared_levels("") == []

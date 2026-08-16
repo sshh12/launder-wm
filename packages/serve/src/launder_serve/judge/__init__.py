@@ -1,8 +1,14 @@
 """The judge: observations in, a derived verdict out (TECH_PLAN.md §7.3-§7.5).
 
-Nothing outside this package may call a provider directly; `LlmGate` owns the
-cache, the rate limiter, the spend ledger and the failover chain, and skipping
-it skips all four.
+Nothing outside this package may call a provider directly; `CachingJudge` owns
+the cache, the rate limiter and the spend ledger, and skipping it skips all
+three.
+
+There is ONE paid provider: OpenAI. The policy is one provider, one retry, then
+fail open provisional — `build_provider()` returns a single `JudgeProvider`, and
+a provider error becomes a provisional clear rather than a call to a second
+vendor. `fake` and `cassette` are offline stand-ins for tests and CI, not
+alternatives that spend money.
 
 `build_provider()` is the only place `JUDGE_PROVIDER` is interpreted. It also
 refuses to build a live provider whose `prompt_hash` disagrees with
@@ -12,7 +18,6 @@ likely way to serve stale verdicts after a prompt edit (§7.5).
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 import httpx
@@ -68,16 +73,27 @@ __all__ = [
     "build_provider",
     "cache_key",
     "compute_prompt_hash",
+    "resolve_model",
     "resolve_prompt_hash",
 ]
 
-_log = logging.getLogger("launder.judge")
+
+def resolve_model(content: Content, settings: Settings) -> str:
+    """The model this build will send. `JUDGE_MODEL` overrides judge.toml's pin.
+
+    One definition, because three things have to agree on it or the cache is
+    wrong: the request body, the `prompt_hash` (which covers the model id) and
+    the boot assertion that the model is pinned at all.
+    """
+    return settings.judge_model or content.judge.model
 
 
 def resolve_prompt_hash(content: Content, settings: Settings) -> str:
     """The hash this build actually computes, over the model that will be used."""
-    model = settings.judge_model or content.judge.model
-    return compute_prompt_hash(model_id=model, reasoning_effort=content.judge.reasoning_effort)
+    return compute_prompt_hash(
+        model_id=resolve_model(content, settings),
+        reasoning_effort=content.judge.reasoning_effort,
+    )
 
 
 def assert_prompt_hash(content: Content, settings: Settings) -> list[str]:
@@ -118,17 +134,21 @@ def assert_prompt_hash(content: Content, settings: Settings) -> list[str]:
 
 def build_provider(
     content: Content, settings: Settings, *, http: httpx.AsyncClient | None = None
-) -> tuple[JudgeProvider, JudgeProvider | None]:
-    """`(primary, failover)` for `JUDGE_PROVIDER`. Failover is `None` when unusable."""
+) -> JudgeProvider:
+    """THE provider for `JUDGE_PROVIDER`. One provider, never a chain.
+
+    A provider error is not routed to a second vendor: `CachingJudge` retries
+    once and then raises, and core turns that into a provisional clear (§7.5).
+    """
     prompt_hash = resolve_prompt_hash(content, settings)
     provider = settings.judge_provider
 
     if provider == "fake":
-        return FakeJudge(), None
+        return FakeJudge()
 
     if provider == "cassette":
         assert settings.judge_cassette_path is not None  # asserted in Settings
-        return CassetteJudge(settings.judge_cassette_path, prompt_hash=prompt_hash), None
+        return CassetteJudge(settings.judge_cassette_path, prompt_hash=prompt_hash)
 
     if http is None:
         raise RuntimeError(
@@ -136,53 +156,16 @@ def build_provider(
             "lifetime so connections are pooled and closed on shutdown."
         )
 
-    primary: JudgeProvider
-    if provider == "openai":
-        primary = OpenAIJudge(
-            settings.openai_api_key,
-            model=settings.judge_model or content.judge.model,
-            client=http,
-            max_output_tokens=content.judge.max_output_tokens,
-            temperature=content.judge.temperature,
-            reasoning_effort=content.judge.reasoning_effort or None,
-            schema_name=content.judge.schema_out.name,
-        )
-        failover = _anthropic_leg(content, settings)
-    else:
-        leg = _anthropic_leg(content, settings, primary=True)
-        if leg is None:
-            raise RuntimeError("JUDGE_PROVIDER=anthropic but no ANTHROPIC_API_KEY is set.")
-        primary, failover = leg, None
-
-    if settings.judge_record and settings.judge_cassette_path is not None:
-        primary = RecordingJudge(primary, settings.judge_cassette_path, prompt_hash=prompt_hash)
-    return primary, failover
-
-
-def _anthropic_leg(
-    content: Content, settings: Settings, *, primary: bool = False
-) -> JudgeProvider | None:
-    if not settings.anthropic_api_key.get_secret_value():
-        return None
-    model = (
-        (settings.judge_model or content.judge.model)
-        if primary
-        else (settings.judge_failover_model or content.judge.failover_model)
-    )
-    if not model or model == "REPLACE_AT_BUILD_TIME":
-        _log.warning(
-            "no Anthropic model pinned (JUDGE_FAILOVER_MODEL is unset and judge.toml "
-            "carries the build-time sentinel): the §7.5 failover leg is disabled."
-        )
-        return None
-    # Imported here so `import launder_serve.judge` does not pull the SDK into a
-    # process that will only ever run the fake provider.
-    from launder_serve.judge.anthropic import AnthropicJudge, make_anthropic_client
-
-    client = make_anthropic_client(settings.anthropic_api_key, timeout_s=settings.judge_timeout_s)
-    return AnthropicJudge(
-        client,
-        model=model,
+    live: JudgeProvider = OpenAIJudge(
+        settings.openai_api_key,
+        model=resolve_model(content, settings),
+        client=http,
         max_output_tokens=content.judge.max_output_tokens,
         temperature=content.judge.temperature,
+        reasoning_effort=content.judge.reasoning_effort or None,
+        schema_name=content.judge.schema_out.name,
     )
+
+    if settings.judge_record and settings.judge_cassette_path is not None:
+        live = RecordingJudge(live, settings.judge_cassette_path, prompt_hash=prompt_hash)
+    return live

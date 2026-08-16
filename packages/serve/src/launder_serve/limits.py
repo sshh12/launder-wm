@@ -1,6 +1,6 @@
 """Per-IP token bucket + the daily spend ledger (TECH_PLAN.md §7.5 rungs 3-4).
 
-Two rules here are load-bearing and both are tested:
+Three rules here are load-bearing and all three are tested:
 
 1. **The rate-limit key is `X-Real-IP`** — Railway's documented header.
    `X-Forwarded-For` is not in the documented set (§14.2 item 6), so it is
@@ -11,9 +11,21 @@ Two rules here are load-bearing and both are tested:
    failure you find out about from the bill. `SHARED_BUCKET_KEY` exists so the
    degenerate path is a named, greppable thing rather than an omission.
 
+3. **This bucket is a FAIRNESS AND ABUSE brake, not the cost bound.** The cost
+   bound is the daily spend ledger, which is atomic and lives in Postgres, so it
+   holds across every replica — while this bucket is process-local and each
+   extra replica adds another full bucket (railway.json runs 3, so the real
+   per-IP ceiling is ~3x this number). That division of labour is what makes a
+   generous
+   limiter safe, and it is why the defaults are 60/hour with a burst of 10
+   rather than the 10/3 they started at: a 15-level campaign is played in ONE
+   SITTING, and corporate and mobile NAT put many players behind a single
+   `X-Real-IP`, so a tight per-IP bucket throttles legitimate play long before
+   it costs an abuser anything.
+
 The bucket is **process-local**, which is why `--workers 1` is load-bearing
-(§9.6): two workers silently double the effective limit. If throughput ever
-matters, move the bucket into Postgres *first*.
+(§9.6): two workers silently double the effective limit within one replica. If
+throughput ever matters, move the bucket into Postgres *first*.
 
 Rungs 0-2 are NOT rate limited. This limiter is consulted on judge cache
 **misses only** — a player hammering the detector, or resubmitting text that is
@@ -80,8 +92,8 @@ class TokenBucketLimiter:
     def __init__(
         self,
         *,
-        per_hour: int = 10,
-        burst: int = 3,
+        per_hour: int = 60,
+        burst: int = 10,
         clock: Callable[[], float] | None = None,
         max_buckets: int = _MAX_BUCKETS,
     ) -> None:

@@ -1,0 +1,70 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p09",
+  "level_id": "L2",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Map projection is the fundamental process of transforming the three-dimensional surface of the Earth onto a two-dimensional plane, an act of unavoidable distortion inherent in representing a sphere on a flat surface. Because a sphere cannot be perfectly flattened without altering its shape and proportions, every map projection involves a compromise – it intentionally distorts certain properties of the Earth to minimize distortion in others. Different projections prioritize different aspects, such as preserving area, shape, distance, or direction, and consequently, no single projection is universally “correct” for all purposes. For instance, the Mercator projection, renowned for its use in navigation, remarkably preserves angles, making it useful for plotting courses, but drastically exaggerates the size of landmasses near the poles, giving Greenland a disproportionately large appearance. Conversely, the Gall-Peters projection aims to accurately depict relative sizes of continents, but significantly distorts their shapes. Cylindrical projections, like the Mercator, wrap the Earth around a cylinder, while conic projections, such as the Lambert Conformal Conic, are used for areas with irregular shapes like South America, minimizing distortion in those regions. The choice of projection fundamentally shapes how we perceive and understand the spatial relationships on Earth, highlighting the complex relationship between representation and reality.  Ultimately, understanding the limitations of a particular projection is crucial for interpreting any map effectively.",
+  "n_words": 216,
+  "detector": {
+    "expected_n_scored": 264,
+    "expected_score": 0.5298431018650455,
+    "expected_z": 5.199831880261274,
+    "g_digest": "blake3:a9184661e194919734b061d129e9e1f6b1b16e0920493e6627b63b0a9cb1fff0"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Map projection transforms the three-dimensional surface of the Earth onto a two-dimensional plane.",
+      "label": "flattening the globe onto a plane",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "A sphere cannot be flattened without altering its shape and proportions, so every projection involves distortion.",
+      "label": "the unavoidable distortion",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "Each projection is a compromise: it deliberately distorts certain properties of the Earth in order to minimise distortion in others.",
+      "label": "the compromise every projection makes",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "Projections prioritise different properties, such as area, shape, distance, or direction, so no single projection is correct for all purposes.",
+      "label": "the lack of one correct projection",
+      "required": false
+    },
+    {
+      "id": "c5",
+      "text": "The Mercator projection preserves angles, which makes it useful for navigation, but it greatly exaggerates the size of landmasses near the poles, such as Greenland.",
+      "label": "the Mercator projection",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "The Gall-Peters projection depicts the relative sizes of continents accurately but significantly distorts their shapes.",
+      "label": "the Gall-Peters projection",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Cylindrical projections wrap the Earth around a cylinder, while conic projections such as the Lambert Conformal Conic suit regions with irregular shapes like South America.",
+      "label": "cylindrical and conic projections",
+      "required": false
+    }
+  ],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

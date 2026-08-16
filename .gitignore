@@ -218,11 +218,11 @@ __marimo__/
 .streamlit/secrets.toml
 
 # ==========================================================================
-# Launder LM — TECH_PLAN.md §11.3 (.dockerignore) and §3 (repo layout).
+# Launder WM — .build-docs/TECH_PLAN.md §11.3 (.dockerignore) and §3 (layout).
 # What must never enter git, and why.
 # ==========================================================================
 
-# Secrets. .env holds OPENAI_API_KEY / ANTHROPIC_API_KEY / HF_TOKEN. The
+# Secrets. .env holds OPENAI_API_KEY / HF_TOKEN. The
 # generic template above already ignores `.env`; these are the siblings.
 .env
 .env.*

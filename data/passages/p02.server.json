@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p02",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "The National Flood Insurance Program, offered by the Federal Emergency Management Agency, is the most common source of flood insurance in the United States.",
+      "label": "the NFIP flood program",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Private flood insurance is increasingly available and can offer tailored coverage and potentially lower premiums for some homeowners.",
+      "label": "private flood insurance options",
+      "required": false
+    },
+    {
+      "id": "c3",
+      "text": "The NFIP insures properties in Special Flood Hazard Areas, which FEMA designates from historical flood data and risk assessments.",
+      "label": "the Special Flood Hazard Areas",
+      "required": false
+    },
+    {
+      "id": "c4",
+      "text": "A Special Flood Hazard Area has a one-percent chance of flooding in any given year and is often called the 100-year floodplain.",
+      "label": "the one-percent floodplain",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Flood coverage typically includes damage to the building's structure, its electrical and plumbing systems, and personal belongings, but not landscaping, detached garages or fences.",
+      "label": "what the policy covers",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Premiums depend on the property's elevation relative to the Base Flood Elevation, the highest level floodwater is expected to reach in a 100-year flood, and on the insured's deductible.",
+      "label": "how premiums are set",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Standard homeowners insurance policies generally exclude flood damage, so separate flood insurance must be purchased.",
+      "label": "the homeowners-policy exclusion",
+      "required": true
+    }
+  ],
+  "par": 4
+}

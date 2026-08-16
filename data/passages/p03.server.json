@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p03",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Sewer maintenance is a critical and largely unseen public service that keeps a municipality operating smoothly and hygienically.",
+      "label": "the unseen public service",
+      "required": false
+    },
+    {
+      "id": "c2",
+      "text": "Sewer maintenance prevents blockages and repairs damage in the underground network of pipes that carries wastewater away from homes and businesses.",
+      "label": "the wastewater pipe network",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "Maintenance begins with regular inspections that often lower CCTV cameras into the pipes to find cracks, root intrusion and other problems.",
+      "label": "CCTV pipe inspections",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "Repair work ranges from simple patching of small cracks to extensive excavation and replacement of entire sections of pipe.",
+      "label": "the range of repairs",
+      "required": false
+    },
+    {
+      "id": "c5",
+      "text": "Technicians use hot-patching, in which specialized materials are heated and applied to seal leaks.",
+      "label": "hot-patching leaks",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Crews clear obstructions with hydraulic jetters, powerful water jets that blast away grease and sludge, and with vacuum trucks that remove heavier material.",
+      "label": "jetters and vacuum trucks",
+      "required": true
+    },
+    {
+      "id": "c7",
+      "text": "Regularly cleaning access points and manholes keeps rainwater and surface contaminants from infiltrating the sewer system.",
+      "label": "manhole and access-point cleaning",
+      "required": false
+    }
+  ],
+  "par": 4
+}

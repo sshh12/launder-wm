@@ -47,7 +47,9 @@
     gap: var(--sp-2);
     margin-bottom: 7px;
   }
-  .daily {
+  /* "Level 3 of 15" — the position in the campaign, always with its total, so
+     the player can see how much is left without opening anything. */
+  .levelno {
     font-size: 11px;
     letter-spacing: 0.14em;
     color: var(--ink-2);
@@ -64,10 +66,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .lvlchip em {
-    font-style: normal;
-    color: var(--hot);
   }
 
   .readout {

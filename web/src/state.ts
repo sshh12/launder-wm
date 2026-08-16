@@ -82,14 +82,22 @@ export interface SubmitResponseWire {
   failure?: GateFailureWire | null;
   trace: CheckResultWire[];
   par?: number | null;
-  rank_today?: number | null;
-  streak?: number | null;
+  /** rank among clears of THIS level, or null. */
+  rank?: number | null;
   share?: string | null;
+}
+
+/** `GET /api/progress?session_id=` — the server's half of the campaign record.
+ *  An unknown session id is not an error: it answers with an empty `cleared`. */
+export interface ProgressWire {
+  cleared: number[];
+  unlocked: number;
+  level_count: number;
 }
 
 /* ------------------------------------------------------------------ *
  * Boot payload — inlined into index.html by launder-serve (§9.1: "the
- * index HTML for the daily inlines the passage JSON, so a first-time
+ * index HTML for the level inlines the passage JSON, so a first-time
  * player makes zero API calls before playing").
  * ------------------------------------------------------------------ */
 
@@ -150,8 +158,11 @@ export interface Boot {
   schema: string;
   /** true in the checked-in file; launder-serve replaces the block. */
   dev: boolean;
-  day: string;
-  puzzle_number: number;
+  /** 1-based position in the campaign. What the player sees; `level.id` is the
+   *  ruleset and is never shown. */
+  level_n: number;
+  /** the campaign's length, always rendered next to `level_n`. */
+  level_count: number;
   passage_id: string;
   level: LevelWire;
   par: number | null;

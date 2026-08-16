@@ -37,7 +37,7 @@ from launder_core.schemas import (
     SubmitRequest,
     SubmitResponse,
 )
-from launder_serve.api.deps import AppState, state_of, today_utc
+from launder_serve.api.deps import AppState, state_of
 from launder_serve.errors import RateLimited
 from launder_serve.judge.gate import RATE_LIMITED, REQUEST_CLIENT_KEY
 from launder_serve.repo.protocol import SubmissionRecord
@@ -54,7 +54,11 @@ async def submit(request: Request, body: SubmitRequest, response: Response) -> S
     response.headers["Cache-Control"] = "no-store"
 
     bundle = state.passage_or_404(body.passage_id)
-    level = state.level_or_404(body.level_id)
+    ruleset = state.ruleset_or_404(body.level_id)
+    # The request does not carry `level_n` — the client asserts nothing about
+    # where it is in the campaign, exactly as it asserts nothing about its own
+    # score. The position is the passage's, and the server owns the mapping.
+    level_n = state.level_n_or_404(body.passage_id)
 
     # Everything below is server-computed. This is the entire anti-cheat story
     # and it is three lines long.
@@ -67,11 +71,10 @@ async def submit(request: Request, body: SubmitRequest, response: Response) -> S
     REQUEST_CLIENT_KEY.set(state.rate_key(request.headers))
     RATE_LIMITED.set(None)
 
-    day = today_utc()
     gate: GateResult = await run_gate(
         GateContext(
             passage=bundle.public,
-            level=level,
+            level=ruleset,
             raw=body.text,
             deps=Deps(
                 detector=state.detector,
@@ -93,7 +96,7 @@ async def submit(request: Request, body: SubmitRequest, response: Response) -> S
     failure = _failure(state, gate)
 
     record = SubmissionRecord(
-        day=day,
+        level_n=level_n,
         passage_id=bundle.id,
         level_id=body.level_id,
         text_hash=hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
@@ -117,9 +120,16 @@ async def submit(request: Request, body: SubmitRequest, response: Response) -> S
 
     rank: int | None = None
     share: str | None = None
+    # A PROVISIONAL clear does not advance the campaign. The judge never
+    # answered, so the meaning arm of the gate never ran, and unlocking the next
+    # level on one would let a judge outage walk somebody through all fifteen.
+    # A player with no `session_id` (localStorage refused) still clears the
+    # level; their progress simply lives in the cookie and nowhere else.
     if gate.cleared and not gate.provisional:
-        rank = await state.submissions.rank_of(day, body.level_id, score.distance)
-        share = _share(state, day, score.distance)
+        rank = await state.submissions.rank_of(level_n, score.distance)
+        share = _share(state, level_n, score.distance)
+        if body.session_id:
+            await state.progress.record(body.session_id, level_n, score.distance)
 
     return SubmitResponse(
         cleared=gate.cleared,
@@ -129,11 +139,7 @@ async def submit(request: Request, body: SubmitRequest, response: Response) -> S
         failure=failure,
         trace=gate.trace,
         par=bundle.par,
-        rank_today=rank,
-        # Streaks are derived client-side from the localStorage session: §9.6's
-        # SubmissionRepo has no per-session history query, and adding one would
-        # make `session_id` look like identity. It is not.
-        streak=None,
+        rank=rank,
         share=share,
     )
 
@@ -174,15 +180,15 @@ def _failure(state: AppState, gate: GateResult) -> GateFailure | None:
     return render_feedback(gate.failure, state.content.copy)
 
 
-def _share(state: AppState, day: Any, distance: int) -> str:
+def _share(state: AppState, level_n: int, distance: int) -> str:
+    """ "Launder WM — level 3 cleared in 4 🧼", from copy.toml.
+
+    The level number is the campaign position and nothing else: it does not
+    depend on when the player played, so a share string posted today still
+    names the same level next year.
+    """
     readout: Any = state.content.copy.raw.get("readout", {})
     template = str(readout.get("share_template", "")) if isinstance(readout, dict) else ""
     if not template:
         return ""
-    # `puzzle_number` is `(day - epoch).days + first_number` — a pure function of
-    # the date, so a day INSERTED or REMOVED never renumbers a posted share
-    # string. A day BEFORE the epoch makes it negative, though, which is what a
-    # dev page playing an unscheduled fixture is, and "Launder #-15" is not a
-    # thing to put on a clipboard. Floored at the schedule's own first number.
-    number = max(state.content.schedule.puzzle_number(day), state.content.schedule.first_number)
-    return template.format(puzzle_number=number, distance=distance)
+    return template.format(level_n=level_n, distance=distance)

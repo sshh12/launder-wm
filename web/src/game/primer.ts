@@ -5,7 +5,7 @@
  * ONE explain-affordance in the whole product; learn it once.
  *
  * The primer follows Wordle's contract exactly: it opens once on first land,
- * keyed on localStorage["launderlm.primer.v1"], and thereafter only from the
+ * keyed on localStorage["launderwm.primer.v1"], and thereafter only from the
  * `?` in the rail. It never explains the ripple — the mirror teaches that
  * wordlessly and prose would spoil it.
  *
@@ -23,7 +23,7 @@
 import { Mirror, layoutFromTokens, layoutFromWords } from "./mirror";
 import type { Boot, Copy } from "../state";
 
-export const PRIMER_SEEN_KEY = "launderlm.primer.v1";
+export const PRIMER_SEEN_KEY = "launderwm.primer.v1";
 
 export class Sheets {
   private invoker: Element | null = null;

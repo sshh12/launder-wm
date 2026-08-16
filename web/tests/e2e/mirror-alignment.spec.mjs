@@ -68,7 +68,7 @@ const MUST_MATCH = [
 async function open(page) {
   await page.addInitScript(() => {
     try {
-      localStorage.setItem("launderlm.primer.v1", "1");
+      localStorage.setItem("launderwm.primer.v1", "1");
     } catch {
       /* private mode */
     }

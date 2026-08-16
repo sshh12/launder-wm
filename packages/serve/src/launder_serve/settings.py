@@ -20,15 +20,22 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from launder_serve.judge.gate import EST_USD_PER_CALL
+
 __all__ = ["Settings", "get_settings", "repo_root"]
 
-JudgeProviderName = Literal["openai", "anthropic", "fake", "cassette"]
+#: The judge is OpenAI-ONLY. There is no second paid provider and no failover
+#: leg: the surviving policy is one provider, one retry, then fail open
+#: provisional. A second vendor would mean a second SDK, a second key to seal, a
+#: second prompt-shape to keep equivalent and a second set of verdicts in the
+#: same cache namespace — for a gate whose hard cases are already deterministic.
+JudgeProviderName = Literal["openai", "fake", "cassette"]
 
 #: Providers that cost money and talk to the network. `prompt_hash` enforcement
 #: and the API-key assertion are hard failures for these and warnings for the
 #: offline two, because a PR environment deliberately runs `fake` with no keys
 #: (§11.5: sealed variables do not propagate to PR environments).
-PAID_PROVIDERS: frozenset[str] = frozenset({"openai", "anthropic"})
+PAID_PROVIDERS: frozenset[str] = frozenset({"openai"})
 
 
 def repo_root() -> Path:
@@ -65,16 +72,24 @@ class Settings(BaseSettings):
 
     #: Sealed in Railway. Never logged. Only ever checked for emptiness.
     openai_api_key: SecretStr = SecretStr("")
-    anthropic_api_key: SecretStr = SecretStr("")
 
     judge_provider: JudgeProviderName = "fake"
-    #: VERIFY (§7.5, §14.2 item 4): pin from the live pricing page at build time.
-    #: `data/config/judge.toml` ships the sentinel `REPLACE_AT_BUILD_TIME`; the
-    #: env var wins, and a paid provider with the sentinel still in place is a
-    #: boot failure.
+    #: The model, overriding `data/config/judge.toml`'s pinned `model`. The env
+    #: var wins so a model can be rolled back without a redeploy; a paid provider
+    #: naming the sentinel `REPLACE_AT_BUILD_TIME` is a boot failure. Changing it
+    #: changes `prompt_hash`, which is asserted at boot — that is deliberate, a
+    #: verdict cache keyed on a prompt the model never saw is exactly the bug.
     judge_model: str = ""
-    judge_failover_model: str = ""
-    judge_daily_usd_cap: float = Field(default=2.00, ge=0.0)
+    #: The authorised daily bill, enforced by the Postgres spend ledger. This is
+    #: THE cost bound — it is atomic and shared, so it holds across every replica,
+    #: unlike the per-IP bucket below, which is process-local. Sized for a Hacker
+    #: News front page: the user expects the spike and has accepted the cost.
+    judge_daily_usd_cap: float = Field(default=500.00, ge=0.0)
+    #: What the ledger RESERVES per call, before the call. See `EST_USD_PER_CALL`
+    #: for the derivation. Overridable without a code change because the ledger
+    #: never reconciles: if the real price moves, this number is the only thing
+    #: standing between `daily_usd_cap` and meaning something other than dollars.
+    judge_est_usd_per_call: float = Field(default=EST_USD_PER_CALL, gt=0.0)
     judge_timeout_s: float = Field(default=6.0, gt=0.0)
     #: Replay cassette for CI. `cassette` RAISES on a miss, so CI can never
     #: silently start spending money.
@@ -82,8 +97,17 @@ class Settings(BaseSettings):
     #: Record every live judge call into `judge_cassette_path` as it happens.
     judge_record: bool = False
 
-    rate_limit_judge_per_hour: int = Field(default=10, ge=1)
-    rate_limit_judge_burst: int = Field(default=3, ge=1)
+    #: The per-IP judge bucket, mirrored in `data/config/judge.toml`'s `[limits]`.
+    #: Generous on purpose: a 15-level campaign is played in ONE SITTING, and
+    #: corporate and mobile NAT put many players behind a single `X-Real-IP`, so a
+    #: tight bucket throttles legitimate play long before it touches abuse.
+    #: It is safe to be generous because this bucket is a FAIRNESS AND ABUSE brake,
+    #: not the cost bound — that is `judge_daily_usd_cap`, which is atomic and
+    #: lives in Postgres, so it holds across every replica while this bucket is
+    #: process-local and each extra replica adds another full bucket
+    #: (railway.json runs 3, so the real per-IP ceiling is ~3x these numbers).
+    rate_limit_judge_per_hour: int = Field(default=60, ge=1)
+    rate_limit_judge_burst: int = Field(default=10, ge=1)
 
     pow_enabled: bool = False
     parity_sample_rate: float = Field(default=0.005, ge=0.0, le=1.0)
@@ -97,7 +121,7 @@ class Settings(BaseSettings):
     data_dir: Path | None = None
     web_dist_dir: Path | None = None
 
-    @field_validator("judge_model", "judge_failover_model", "git_sha", mode="before")
+    @field_validator("judge_model", "git_sha", mode="before")
     @classmethod
     def _strip(cls, v: object) -> object:
         return v.strip() if isinstance(v, str) else v
@@ -159,16 +183,6 @@ class Settings(BaseSettings):
                 "SEALED variable on the app service (TECH_PLAN.md §11.5), or set "
                 "JUDGE_PROVIDER=fake for an environment that must not spend money."
             )
-        if self.judge_provider == "anthropic" and not self.anthropic_api_key.get_secret_value():
-            raise RuntimeError(
-                "JUDGE_PROVIDER=anthropic but ANTHROPIC_API_KEY is empty. Set it as "
-                "a SEALED variable on the app service (TECH_PLAN.md §11.5)."
-            )
-        if self.judge_provider == "openai" and not self.anthropic_api_key.get_secret_value():
-            warnings.append(
-                "ANTHROPIC_API_KEY is empty: the §7.5 failover chain is disabled and a "
-                "provider error will degrade straight to cleared+provisional."
-            )
         if self.judge_provider == "cassette" and self.judge_cassette_path is None:
             raise RuntimeError(
                 "JUDGE_PROVIDER=cassette but JUDGE_CASSETTE_PATH is unset. The "
@@ -177,20 +191,26 @@ class Settings(BaseSettings):
             )
         return warnings
 
-    def assert_model_pinned(self) -> None:
-        """A paid provider must name a real model, not the judge.toml sentinel."""
+    def assert_model_pinned(self, resolved_model: str) -> None:
+        """A paid provider must name a real model, not the build-time sentinel.
+
+        Takes the RESOLVED model — `JUDGE_MODEL or judge.toml's model` — rather
+        than reading `self.judge_model`, because judge.toml is where the model is
+        pinned and the env var is only the override. Asserting on the env var
+        alone made `JUDGE_MODEL` mandatory in production, which contradicted the
+        file that records the pin and the `prompt_hash` computed against it.
+        """
         if not self.judge_is_paid:
             return
-        bad = {"", "REPLACE_AT_BUILD_TIME"}
-        if self.judge_model in bad:
+        if resolved_model in {"", "REPLACE_AT_BUILD_TIME"}:
             raise RuntimeError(
-                f"JUDGE_PROVIDER={self.judge_provider} but JUDGE_MODEL is "
-                f"{self.judge_model!r}. TECH_PLAN.md §7.5/§14.2 item 4 flags the model "
-                "IDs in data/config/judge.toml as an unverified third-party scrape: "
-                "pin JUDGE_MODEL from the live pricing page at build time. It must be a "
-                "NON-REASONING model (reasoning effort 'none' or equivalent) — reasoning "
-                "tokens bill as output and push TTFT into tens of seconds, and a submit "
-                "gate that stalls the player for 30 s is a broken game."
+                f"JUDGE_PROVIDER={self.judge_provider} but the resolved judge model is "
+                f"{resolved_model!r}. Pin it in data/config/judge.toml's `model` (and "
+                "record the `prompt_hash` the next boot prints), or set JUDGE_MODEL to "
+                "override it. It must be a NON-REASONING model (reasoning effort 'none' "
+                "or equivalent) — reasoning tokens bill as output and push TTFT into tens "
+                "of seconds, and a submit gate that stalls the player for 30 s is a "
+                "broken game."
             )
 
 

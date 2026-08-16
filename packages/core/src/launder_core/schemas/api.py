@@ -15,7 +15,6 @@ Two properties of these models are load-bearing and must not be "improved":
 
 from __future__ import annotations
 
-from datetime import date, datetime
 from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -27,13 +26,11 @@ from launder_core.schemas.watermark import AssetBundleId, Sha256Digest, WmConfig
 __all__ = [
     "CLIENT_SCORE_FIELDS",
     "MAX_TEXT_BYTES",
-    "DailyResponse",
     "DetectRequest",
     "DetectResponse",
     "DetectorReading",
     "HealthResponse",
-    "LeaderboardEntry",
-    "LeaderboardResponse",
+    "ProgressResponse",
     "ScoreSummary",
     "SubmitClient",
     "SubmitRequest",
@@ -138,7 +135,9 @@ class SubmitRequest(BaseModel):
     level_id: str = Field(pattern=r"^L[1-9][0-9]*$")
     text: str = Field(min_length=1, max_length=MAX_TEXT_BYTES)
     client: SubmitClient = SubmitClient()
-    #: localStorage UUID. NOT identity. NOT trusted. Used only for streaks.
+    #: localStorage UUID. NOT identity. NOT trusted. It is the key campaign
+    #: progress is recorded under, so a player who clears a level without one
+    #: keeps their progress in localStorage alone.
     session_id: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="before")
@@ -183,7 +182,7 @@ class SubmitResponse(BaseModel):
 
     cleared: bool
     #: True when the judge was unreachable after retry and failover. The chime
-    #: plays; the leaderboard and streak exclude it; the UI says "gate
+    #: plays; the board and the recorded progress exclude it; the UI says "gate
     #: unavailable". `injection_attempt` is NEVER provisional (§7.5).
     provisional: bool = False
     score: ScoreSummary
@@ -192,8 +191,9 @@ class SubmitResponse(BaseModel):
     trace: tuple[CheckResult, ...] = ()
 
     par: int | None = Field(default=None, ge=1)
-    rank_today: int | None = Field(default=None, ge=1)
-    streak: int | None = Field(default=None, ge=0)
+    #: Rank among the clears OF THIS LEVEL, or None when this submit did not
+    #: clear. Not a daily ranking: the campaign has no day to rank within.
+    rank: int | None = Field(default=None, ge=1)
     share: str | None = None
 
     @model_validator(mode="after")
@@ -205,46 +205,22 @@ class SubmitResponse(BaseModel):
         return self
 
 
-class DailyResponse(BaseModel):
-    """GET /api/daily. `Cache-Control: public, max-age=60`.
+class ProgressResponse(BaseModel):
+    """GET /api/progress. `Cache-Control: no-store`.
 
-    Daily rollover is UTC midnight, stated in the UI: any local-time scheme
-    means two players see different puzzles and the leaderboard is incoherent.
+    The server's half of the campaign progress the client also keeps in
+    localStorage. An unknown session id is not an error — it is a first visit,
+    a cleared cache or a second device — and it answers "nothing cleared, level
+    1 unlocked" rather than 404ing a player who has done nothing wrong.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    day: date
-    passage_id: str = Field(min_length=1, max_length=64)
-    level_id: str = Field(pattern=r"^L[1-9][0-9]*$")
-    par: int | None = Field(default=None, ge=1)
-    observed_par: int | None = Field(default=None, ge=0)
-    puzzle_number: int = Field(ge=1)
-    passage_url: str = Field(min_length=1)
-    asset_bundle_id: AssetBundleId
-
-
-class LeaderboardEntry(BaseModel):
-    """Diffs are public by design: the brag, the anti-cheat mechanism and the
-    teaching tool are the same object. No names, no session ids, no identity."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    rank: int = Field(ge=1)
-    distance: int = Field(ge=0)
-    ops: tuple[EditOp, ...] = ()
-    elapsed_ms: int | None = Field(default=None, ge=0)
-    at: datetime
-
-
-class LeaderboardResponse(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    day: date
-    level_id: str = Field(pattern=r"^L[1-9][0-9]*$")
-    par: int | None = Field(default=None, ge=1)
-    machine_par: int | None = Field(default=None, ge=1)
-    rows: tuple[LeaderboardEntry, ...] = ()
+    cleared: tuple[int, ...] = ()
+    #: `min(max(cleared, default 0) + 1, level_count)`. Derived, never stored:
+    #: a stored value would drift the moment the campaign grew a level.
+    unlocked: int = Field(ge=1)
+    level_count: int = Field(ge=1)
 
 
 class HealthResponse(BaseModel):

@@ -3,7 +3,8 @@
 ## (.dockerignore excludes packages/forge/; the Dockerfile syncs
 ##  `--package launder-serve`, which is what actually keeps torch out.)
 ##
-## TORCH, AND THE ONE DELIBERATE DEVIATION FROM TECH_PLAN.md §2.1 / §6.1
+## TORCH, AND THE ONE DELIBERATE DEVIATION FROM .build-docs/TECH_PLAN.md
+## §2.1 / §6.1
 ## ---------------------------------------------------------------------------
 ## The plan pins `torch==2.13.0` from the cu130 index, because cu128/cu129
 ## wheels were REMOVED in 2.13 and cu130 is the Blackwell (sm_120) path. That
@@ -26,7 +27,7 @@
 [project]
 name = "launder-forge"
 version = "0.1.0"
-description = "Launder LM authoring studio: generate, analyze, solve, triage, calibrate, pack"
+description = "Launder WM authoring studio: generate, analyze, solve, triage, calibrate, pack"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
 dependencies = [
@@ -36,13 +37,14 @@ dependencies = [
     # Do NOT hard-pin the tokenizers patch — a wrong pin is the #1 cause of
     # TokenizerFast load failures.
     #
-    # DEVIATION FROM TECH_PLAN.md §2.1, forced by upstream and verified by
-    # execution: the plan asks for `tokenizers>=0.23,<0.24`, which does not
-    # resolve. transformers 5.15.0 declares `tokenizers<=0.23.0,>=0.22.0`, and
-    # tokenizers 0.23.0 WAS NEVER RELEASED — PyPI has 0.23.0rc0 and then
-    # 0.23.1. So transformers 5.15.0's ceiling admits only 0.22.x. Widening the
-    # floor to 0.22 is the minimum change that resolves, and it is exactly the
-    # "do not hard-pin the patch" rule the plan states one line earlier.
+    # DEVIATION FROM .build-docs/TECH_PLAN.md §2.1, forced by upstream and
+    # verified by execution: the plan asks for `tokenizers>=0.23,<0.24`, which
+    # does not resolve. transformers 5.15.0 declares
+    # `tokenizers<=0.23.0,>=0.22.0`, and tokenizers 0.23.0 WAS NEVER RELEASED —
+    # PyPI has 0.23.0rc0 and then 0.23.1. So transformers 5.15.0's ceiling
+    # admits only 0.22.x. Widening the floor to 0.22 is the minimum change that
+    # resolves, and it is exactly the "do not hard-pin the patch" rule the plan
+    # states one line earlier.
     #
     # Consequence to know: data/golden/tokenizer_golden.json (4,031 cases) was
     # generated with Rust tokenizers 0.23.1. If 0.22.x disagrees on any case,
@@ -84,7 +86,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/launder_forge"]
 
-# --- the plan's index declaration, verbatim (TECH_PLAN.md §6.1) --------------
+# --- the plan's index declaration, verbatim (.build-docs/TECH_PLAN.md §6.1) --
 [[tool.uv.index]]
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"

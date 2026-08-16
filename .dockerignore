@@ -1,5 +1,5 @@
-# TECH_PLAN.md §11.3. Keeps the answer key, the fat intermediates, the secrets
-# and torch out of the image.
+# .build-docs/TECH_PLAN.md §11.3. Keeps the answer key, the fat intermediates,
+# the secrets and torch out of the image.
 #
 # Verify after every build (both are CI steps):
 #   docker run --rm launder:ci sh -c 'ls -a /app | grep -qE "^\.env"'   must FAIL
@@ -58,5 +58,14 @@ reports/
 exports/
 tools/
 *.md
-# NOTICE has no extension, so it is not matched above — it is COPYed explicitly
-# by the runtime stage and MUST ship: we redistribute the Gemma tokenizer.
+# The design record. `*.md` above only matches the CONTEXT ROOT — a docker
+# pattern's `*` does not cross a `/` — so moving the documents into a directory
+# took them out of that rule's reach, and TECH_PLAN_MOCK.html was never in it at
+# all (it is HTML). Nothing here was ever COPYed, so the cost was 170 KB of plan
+# plus the mock uploaded to the daemon on every build, not image size; one
+# directory line covers all four either way.
+.build-docs/
+# NOTICE has no extension, so it is not matched by `*.md` — it is COPYed
+# explicitly by the runtime stage and MUST ship: we redistribute the Gemma
+# tokenizer. README.md is matched, and that is correct: the front door is for
+# the repo, not for the container.

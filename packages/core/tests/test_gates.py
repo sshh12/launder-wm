@@ -236,9 +236,9 @@ async def test_only_submissions_that_beat_the_watermark_reach_the_judge() -> Non
 
 async def test_a_judge_outage_clears_provisionally() -> None:
     """§7.5 fail-open: the deterministic checks already caught every mechanical
-    exploit, so a false clear costs a leaderboard row and a false rejection
-    costs a player."""
-    judge = FakeJudge(raises=JudgeUnavailable("both providers down"))
+    exploit, so a false clear costs one unranked run — it does not advance the
+    campaign — while a false rejection costs a player."""
+    judge = FakeJudge(raises=JudgeUnavailable("the provider is down"))
     ctx = context(raw=PASSAGE_TEXT, deps=Deps(detector=FakeDetector(z=0.0), judge=judge))
     result = await run_gate(ctx)
     assert result.cleared is True

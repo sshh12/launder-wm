@@ -11,32 +11,40 @@ judge_version = "g3"
 prompt_id     = "judge.observe.v3"
 
 # --- provider ---------------------------------------------------------------
-# Selected by the JUDGE_PROVIDER env var; this file records the intended
-# default and the failover chain. `fake` is deterministic and marker-driven
+# ONE PAID PROVIDER: OpenAI. There is no failover leg and no second vendor — the
+# policy is one provider, one retry, then fail open provisional (see
+# [failure_policy] below). Selected by the JUDGE_PROVIDER env var; this file
+# records the intended default. `fake` is deterministic and marker-driven
 # (__FAIL_INJECTION__, __FAIL_NATURAL__, __DROP_c3__) — its job is to exercise
 # the PIPELINE, not to judge well. `cassette` replays recorded verdicts keyed by
 # the same cache key and RAISES ON A MISS, so CI can never silently spend money.
-provider          = "openai"           # openai | anthropic | fake | cassette
-failover_provider = "anthropic"        # failover, NOT consensus (§7.5)
+provider          = "openai"           # openai | fake | cassette
 
-# VERIFY-BEFORE-BUILD (§7.5, §14.2 item 4). Model IDs and pricing in the source
-# research run were an unverified third-party scrape. PIN `JUDGE_MODEL` FROM THE
-# LIVE PRICING PAGE AT BUILD TIME and settle the choice with
-# `make eval-judge-compare` at M5 — not from any document, including this one.
-# The env var wins; these are the recorded defaults, and they are placeholders
-# until that comparison runs.
-model             = "REPLACE_AT_BUILD_TIME"   # VERIFY: pin from the live pricing page
-failover_model    = "REPLACE_AT_BUILD_TIME"   # VERIFY: Haiku-class, failover only
+# PINNED. Probed live against POST /v1/responses with this repo's exact request
+# body, so these are measurements and not a scrape: it accepts the strict
+# `text.format = {type: "json_schema", ...}` block and returns a valid
+# launder_gate_observation; it accepts BOTH `reasoning = {effort = "none"}` and
+# `temperature = 0.0`; at effort "none" it spends 0 reasoning tokens; and a real
+# 250-word passage with a 6-claim list cost 1,887 input + 164 output tokens and
+# 2.0 s round trip, completing well inside max_output_tokens and timeout_s.
+#
+# JUDGE_MODEL still wins, so a bad model is one env var to roll back.
+#
+# CHANGING THIS CHANGES `prompt_hash`: the hash covers the model id, so a model
+# swap is a boot failure until the new hash is recorded here. That is deliberate
+# — a verdict cache keyed on a prompt the model never saw is exactly the bug.
+model             = "gpt-5.6-terra"
 
 # Non-negotiable regardless of model: reasoning tokens bill as output AND push
 # TTFT from sub-second into tens of seconds, and a submit gate that stalls the
 # player for 30 s is a broken game.
 reasoning_effort  = "none"
 temperature       = 0.0
+# Both measured sufficient against the pinned model (164 output tokens, 2.0 s)
+# and therefore NOT to be trimmed without re-probing.
 max_output_tokens = 300
 timeout_s         = 6.0      # MUST stay shorter than railway.json drainingSeconds (15)
-max_retries       = 1        # one retry, then failover. Never both providers per submit.
-shadow_sample_rate = 0.01    # 1% mirror to the second provider, for mining eval cases
+max_retries       = 1        # one retry against the one provider, then fail open
 
 # --- prompt integrity -------------------------------------------------------
 # prompt_hash = sha256(system_prompt + json.dumps(schema, sort_keys=True)
@@ -45,10 +53,11 @@ shadow_sample_rate = 0.01    # 1% mirror to the second provider, for mining eval
 # the single most likely way to serve stale verdicts after a prompt edit; this
 # turns it into a startup failure (§7.5, §12 row 12).
 #
-# PLACEHOLDER. `launder_serve.judge.prompt` computes the real value; the first
-# boot after the prompt lands will fail with the correct hash in the message,
-# and that hash goes here. Do not compute it by hand.
-prompt_hash = "PLACEHOLDER_SET_ON_FIRST_BOOT"
+# Computed by `launder_serve.judge.prompt.compute_prompt_hash` against the model
+# pinned above and `reasoning_effort = "none"`. Never hand-written: edit the
+# prompt, the schema, the model or the effort, and the next boot fails with the
+# correct value in the message. Paste that.
+prompt_hash = "1722e73930d5ab522b67d9bb284486e41febfecefe3b477b246c60cde044c015"
 prompt_hash_enforced = true
 
 # --- schema -----------------------------------------------------------------
@@ -82,7 +91,7 @@ use_verdict_opinion    = false
 [cache]
 key_fields   = ["judge_version", "prompt_hash", "scoring_version", "passage_id", "level_id", "text_hash"]
 key_separator_codepoint = 31   # U+001F ASCII unit separator; the unit-separator join of TECH_PLAN.md 7.5
-scope        = "global"      # not per-player: one daily for everyone means convergent solutions dedupe hard
+scope        = "global"      # not per-player: every player faces the SAME campaign level, so convergent solutions dedupe hard
 cache_failures = true        # most repeat traffic is a player resubmitting identical broken text
 cache_errors   = false       # a provisional clear must NEVER become permanent
 ttl_seconds    = 0           # no TTL — keys are content-addressed and version-scoped
@@ -91,10 +100,24 @@ lru_entries    = 2000        # process-local, in front of the repo
 # --- abuse ladder (§7.5) ----------------------------------------------------
 # Rungs 0-2 are NOT rate limited: a player hammering the detector and failing
 # rung 1 costs nothing, and throttling that would make the game feel broken.
+#
+# These three MIRROR the defaults in `launder_serve.settings` and must not drift
+# from them: this file is what a reader consults, those defaults are what an
+# unset env var produces.
+#
+# The per-IP bucket is a FAIRNESS AND ABUSE brake, NOT the cost bound. The cost
+# bound is `daily_usd_cap`, enforced by the spend ledger, which is atomic and
+# lives in Postgres and therefore holds across every replica — while the bucket
+# is process-local and each extra replica adds another full bucket (railway.json
+# runs 3, so the real per-IP ceiling is ~3x these numbers). That is what makes
+# a generous limiter safe, and the limits are generous on purpose: a 15-level
+# campaign is played in ONE SITTING, and corporate and mobile NAT put many
+# players behind a single X-Real-IP, so a tight bucket throttles legitimate play
+# rather than abuse.
 [limits]
-daily_usd_cap          = 2.00        # env JUDGE_DAILY_USD_CAP wins
-rate_limit_per_hour    = 10          # misses only
-rate_limit_burst       = 3
+daily_usd_cap          = 500.00      # env JUDGE_DAILY_USD_CAP wins; sized for a Hacker News spike
+rate_limit_per_hour    = 60          # misses only
+rate_limit_burst       = 10
 # Railway's DOCUMENTED header. X-Forwarded-For is not in the documented set
 # (VERIFY, §14.2 item 6). A MISSING header must mean ONE SHARED BUCKET, never
 # "unlimited".
@@ -103,11 +126,13 @@ missing_header_policy  = "shared_bucket"
 pow_enabled            = false
 
 # --- fail-open policy (§7.5) ------------------------------------------------
-# After retry and failover, return cleared=true provisional=true: the chime
-# plays, the leaderboard and streak exclude it, and it is labelled "gate
-# unavailable". The deterministic checks already caught every mechanical
-# exploit; a false clear costs a leaderboard row, a false rejection costs a
-# player. The ONE exception is contains_embedded_instructions.
+# After the retry — there is no failover — return cleared=true provisional=true:
+# the chime plays and the UI labels it "gate unavailable", but the campaign does
+# NOT advance to the next level, nothing is written to the player's progress,
+# and the run is excluded from the per-level best-distance ranking. The
+# deterministic checks already caught every mechanical exploit, so a false clear
+# costs one unranked run while a false rejection costs a player. The ONE
+# exception is contains_embedded_instructions.
 [failure_policy]
 on_provider_error = "fail_open_provisional"
 on_injection      = "fail_closed"

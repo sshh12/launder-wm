@@ -1,0 +1,120 @@
+# data/config/progression.toml
+#
+# THE CAMPAIGN: level number -> passage -> ruleset. This file replaced
+# schedule.toml when the game stopped being a daily. There is no date here, no
+# rollover, no puzzle number and no epoch: level 1 is the same passage for
+# everyone, forever, and a player advances by clearing it. Everything that was
+# once "which puzzle is today" is now "which level have you reached", which the
+# client carries in a cookie and the server records per session.
+#
+# `n` is what the PLAYER sees ("Level 3 of 15"). `rules` is a `levels.toml` id
+# and is internal + wire only — the string "L1" is never rendered. Keeping the
+# two apart is what lets the campaign reorder or grow without renaming a
+# ruleset, and lets four different levels share one ruleset without pretending
+# they are the same level.
+
+schema = "launder.progression/1"
+
+# A level whose passage file is missing is a BOOT FAILURE. There is no
+# "skip the day" behaviour any more; a hole in the campaign is a broken build.
+strict = true
+
+# --- the campaign ------------------------------------------------------------
+# `n` must be 1..15 contiguous with no gaps and no repeats: the client computes
+# `unlocked = min(max(cleared) + 1, level_count)` and a gap would strand every
+# player at the hole.
+#
+# ORDER IS DIFFICULTY, and difficulty here is two things at once: the ruleset
+# ladder L1 -> L2 -> L3 -> L4 (each adds a constraint), and within each ruleset
+# group, ascending detector z — a passage that starts further above the line
+# needs more edits before the needle drops under it. L5 (code) and L6
+# (regenerate locally) are deliberately NOT in the campaign: L5 has no unit-test
+# passage authored and is dropped at boot as unserviceable, and L6 has no
+# passage at all.
+
+[[level]]
+n          = 1
+passage_id = "p01"
+rules      = "L1"
+
+[[level]]
+n          = 2
+passage_id = "p02"
+rules      = "L1"
+
+[[level]]
+n          = 3
+passage_id = "p03"
+rules      = "L1"
+
+[[level]]
+n          = 4
+passage_id = "p04"
+rules      = "L1"
+
+# Was the passage schedule.toml's `[intro]` block reserved for the tutorial. It
+# never got the baked prefix-z the intro slider needs — its `intro` field is
+# null, like every other passage — so it is an ordinary L1 level here rather
+# than a special case that does nothing.
+[[level]]
+n          = 5
+passage_id = "p05"
+rules      = "L1"
+
+[[level]]
+n          = 6
+passage_id = "p06"
+rules      = "L1"
+
+[[level]]
+n          = 7
+passage_id = "p07"
+rules      = "L1"
+
+# L2 arrives: the edit budget. Triage derived it from par_upper + 2, so the
+# budget is loose enough that a competent first attempt fits inside it.
+[[level]]
+n          = 8
+passage_id = "p08"
+rules      = "L2"
+
+[[level]]
+n          = 9
+passage_id = "p09"
+rules      = "L2"
+
+[[level]]
+n          = 10
+passage_id = "p10"
+rules      = "L2"
+
+[[level]]
+n          = 11
+passage_id = "p11"
+rules      = "L2"
+
+# L3 arrives: the locked phrase. Both L3 passages carry exactly one phrase in
+# `rules.locked_phrases`; an empty list would make the check vacuous and the
+# level indistinguishable from L2.
+[[level]]
+n          = 12
+passage_id = "p12"
+rules      = "L3"
+
+[[level]]
+n          = 13
+passage_id = "p13"
+rules      = "L3"
+
+# L4 closes the campaign: close_paraphrase plus `require_claims = "all"`, so
+# every authored claim is load-bearing and there is no room to rewrite around
+# the hot words.
+[[level]]
+n          = 14
+passage_id = "p14"
+rules      = "L4"
+
+[[level]]
+n          = 15
+passage_id = "p15"
+rules      = "L4"

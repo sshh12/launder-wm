@@ -15,18 +15,24 @@
 import { expect, test } from "@playwright/test";
 
 async function fresh(page) {
-  await page.goto("/");
+  await page.goto("/?level=1");
 }
 
+/**
+ * A returning player: primer already seen, and pinned to level 1 with
+ * `?level=`. The pin matters — without it, a spec that clears a level leaves a
+ * `launder_level` cookie behind and the NEXT spec in the same browser context
+ * lands on a different passage than the one it was written against.
+ */
 async function returning(page) {
   await page.addInitScript(() => {
     try {
-      localStorage.setItem("launderlm.primer.v1", "1");
+      localStorage.setItem("launderwm.primer.v1", "1");
     } catch {
       /* private mode */
     }
   });
-  await page.goto("/");
+  await page.goto("/?level=1");
 }
 
 test.describe("first land", () => {
@@ -71,17 +77,51 @@ test.describe("the instrument", () => {
     expect(label?.length ?? 0).toBeGreaterThan(0);
   });
 
-  test("prints 21 ticks and five scale labels", async ({ page }) => {
+  test("prints 21 ticks and a scale that runs 0 to 100", async ({ page }) => {
     await returning(page);
     await expect(page.locator("#face .tick")).toHaveCount(21);
-    await expect(page.locator("#scalerow span")).toHaveCount(5);
+    const labels = await page.locator("#scalerow span").allTextContents();
+    // z is the statistic and stays internal; a face printed -2..10 reads as a
+    // broken instrument.
+    expect(labels).toEqual(["0", "25", "50", "75", "100"]);
   });
 
-  test("says AI detected / Not detected, never human and never a percentage", async ({ page }) => {
+  test("reads a bare 0-100 number, never a decimal and never a percentage", async ({ page }) => {
     await returning(page);
+    const num = (await page.locator("#num").textContent()) ?? "";
+    expect(num).toMatch(/^\d{1,3}$/);
+    expect(Number(num)).toBeGreaterThanOrEqual(0);
+    expect(Number(num)).toBeLessThanOrEqual(100);
     const word = (await page.locator("#stateword").textContent()) ?? "";
     expect(word.toLowerCase()).not.toContain("human");
     expect(word).not.toContain("%");
+  });
+});
+
+test.describe("the campaign", () => {
+  test("names the level and its total, and never the ruleset id", async ({ page }) => {
+    await returning(page);
+    // "Level 1 of 15". The player never sees "L1" — that is the rule LIST's id,
+    // and two numbering systems on one screen is how they came to be confused.
+    const levelno = (await page.locator("#levelno").textContent()) ?? "";
+    expect(levelno).toMatch(/\d+.*\d+/);
+    await expect(page.locator("#lvlname")).not.toBeEmpty();
+    await expect(page.locator("#lvlid")).toHaveCount(0);
+  });
+
+  test("credits the author with two tappable links", async ({ page }) => {
+    await returning(page);
+    const links = page.locator(".foot .credit");
+    await expect(links).toHaveCount(2);
+    await expect(links.first()).toHaveAttribute("href", "https://x.com/ShrivuShankar");
+    await expect(links.last()).toHaveAttribute("href", "https://github.com/sshh12/launder-wm");
+    for (const link of await links.all()) {
+      await expect(link).not.toBeEmpty();
+      await expect(link).toHaveAttribute("rel", "noopener");
+      // Not a disabled hint: it has to be underlined and at ink weight.
+      const decoration = await link.evaluate((el) => getComputedStyle(el).textDecorationLine);
+      expect(decoration).toContain("underline");
+    }
   });
 });
 

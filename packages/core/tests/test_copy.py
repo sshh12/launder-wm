@@ -327,7 +327,9 @@ def test_legitimate_notes_survive(notes: str) -> None:
 # ---------------------------------------------------------------------------
 def test_the_readout_never_claims_a_human_wrote_it() -> None:
     readout = tomllib.loads(COPY_TOML.read_text(encoding="utf-8"))["readout"]
-    assert readout["above"] == "AI detected"
+    # The detector finds a WATERMARK. It does not identify AI writing, and the
+    # line above the notch says exactly what was found and nothing more.
+    assert readout["above"] == "AI watermark detected"
     assert readout["below"] == "Not detected"
     assert "human" not in " ".join(str(v) for v in readout.values()).lower()
 

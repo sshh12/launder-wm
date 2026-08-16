@@ -49,7 +49,7 @@ async def test_healthz_is_registered(client: httpx.AsyncClient) -> None:
 
     Structural assertions on `app.routes` do not survive a FastAPI upgrade —
     included routers are wrapped, not flattened — so the order is asserted the
-    way it actually matters, in `test_static_and_daily.py`: with the catch-all
+    way it actually matters, in `test_static_and_progress.py`: with the catch-all
     mounted, `/healthz` still answers.
     """
     assert (await client.get("/healthz")).status_code == 200

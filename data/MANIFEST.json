@@ -20,12 +20,12 @@
       "blake3": "blake3:73d6c230726960a928055d1e85dd1b0f7856679669fcf1be1d63de259f7832ff"
     },
     "data/config/copy.toml": {
-      "bytes": 13463,
-      "blake3": "blake3:bd38fa3c8685a2d77119630326234c9a9cc4b564963cc207505a7c57bf24117d"
+      "bytes": 16936,
+      "blake3": "blake3:ac57d3c400cfe76978df9cb4fd8a78c7595cbfa6fba004fd3411eb9345c67e74"
     },
     "data/config/judge.toml": {
-      "bytes": 8063,
-      "blake3": "blake3:6e1dab2869889cf6c068d0717a77e973db82b894b0c39beb346a5055dcb33ce1"
+      "bytes": 9814,
+      "blake3": "blake3:f94a609ad2ce0c4aa555486018267ad4c5e324f6a62471329d02d99180fc0df9"
     },
     "data/config/lemma.v1.tsv": {
       "bytes": 2148,
@@ -35,13 +35,13 @@
       "bytes": 5160,
       "blake3": "blake3:b4d7f77dd3c217d99c0ecb58bbf0666f4b0177d29e640f9418a15e0f5878a039"
     },
+    "data/config/progression.toml": {
+      "bytes": 3506,
+      "blake3": "blake3:2dd62c07ad9afce6449db8360c9c69164ba24303f1a42ef63b958625ef1315f5"
+    },
     "data/config/prompts/high_entropy.yaml": {
       "bytes": 2841,
       "blake3": "blake3:3d07fb8ecb1f4ee17304505ac47486f74806319db1a9e5051a590966c6eb737f"
-    },
-    "data/config/schedule.toml": {
-      "bytes": 2988,
-      "blake3": "blake3:5485a281cc26ee3f8dd2cf6c3e90e6e949d594158d4df9ffab27c55c89849fff"
     },
     "data/config/scoring.toml": {
       "bytes": 4550,
@@ -83,189 +83,189 @@
       "bytes": 0,
       "blake3": "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
     },
-    "data/passages/p_2026-08-16.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:9962ddf0dfb90474546a5d99314a5b5bda656025f573f55bd5ec92323aaa3a57"
+    "data/passages/p01.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:99045897afe7bded9d6dd2eb3b4a0aeda3c7bae92503718a496a7c602492e7e6"
     },
-    "data/passages/p_2026-08-16.public.json": {
-      "bytes": 2594,
-      "blake3": "blake3:71af63a3cc7696d0f986250951177d740137d9fd7dfdc9ec468efa39203e99a0"
+    "data/passages/p01.public.json": {
+      "bytes": 4307,
+      "blake3": "blake3:8359f52961366701e7b4288723b50cb73b750ee28b16200b4a8d6caa3464b336"
     },
-    "data/passages/p_2026-08-16.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:6442c244276198997d71f1fa16bfe66d2384fe695d67ccf52957e38e16292f4c"
+    "data/passages/p01.server.json": {
+      "bytes": 2049,
+      "blake3": "blake3:18d1998ff6942e86fc9279c750da4ba2ad15a0337167ada7c80b3d5e1d81c637"
     },
-    "data/passages/p_2026-08-17.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:894ddc4317df3f9c8af3bcda8db875fe0656735a1f0c193b41a0635004be5d79"
+    "data/passages/p02.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:7e1feacef8f99f1672ba4062b3f61e69eb14280514604fba1f9fef3313c855cf"
     },
-    "data/passages/p_2026-08-17.public.json": {
-      "bytes": 2714,
-      "blake3": "blake3:902cae1fb05fa3d3be6aaaed0564facedb1cb3c06f91ae210db572fd44d1d147"
+    "data/passages/p02.public.json": {
+      "bytes": 4301,
+      "blake3": "blake3:dd4e95ca5a08f22dffdf35bce1cbc94c2bcf3efad69c900567db12f400e3916f"
     },
-    "data/passages/p_2026-08-17.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:ce2af1073c9582d5febf89dfb9a8c8d128b040a076e88c4e8f949434d7cc73db"
+    "data/passages/p02.server.json": {
+      "bytes": 1986,
+      "blake3": "blake3:c61b0a638ba9aa72944c53d85fbc430ee05ce5bb9411c97f788b9d966135dff0"
     },
-    "data/passages/p_2026-08-18.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:50d7bd821ae0461ffb7d45ddea2ee857209036691ae5adfe1c5d08f44be2196d"
+    "data/passages/p03.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:34116de02f2378055fcc3d4dedb21e95f1377ddf4d1b392d04d91c124ed14bcd"
     },
-    "data/passages/p_2026-08-18.public.json": {
-      "bytes": 2528,
-      "blake3": "blake3:7aa4029749733753643c4c9690f30655c90ef4e064a5fb053769f07ecda499f8"
+    "data/passages/p03.public.json": {
+      "bytes": 4197,
+      "blake3": "blake3:c4a755a28b6d4db954704aff8caddd4c0c512872ce6901d46f4302a8af2e966b"
     },
-    "data/passages/p_2026-08-18.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:4f5dc0c2de5a9dd5dd0c85737113a64f8a56d3ca7a01b9ba5a056d73d14b273d"
+    "data/passages/p03.server.json": {
+      "bytes": 1859,
+      "blake3": "blake3:59021a59aec0f3bd66762b1cf71c4cdde852e890f9ab38b838095fc48990312d"
     },
-    "data/passages/p_2026-08-19.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:75ce8cba8770b0027b368dcc0b6c576236171cb15778815a688544d0e6c43795"
+    "data/passages/p04.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:73699c59fd4af2ce2a46ef35bc07f278d014ada462463557d3db86e73bd639a7"
     },
-    "data/passages/p_2026-08-19.public.json": {
-      "bytes": 2698,
-      "blake3": "blake3:e6bbaf1091899895ad4360921fcab0292b7f2bf1a63c6f1957246f04c2892519"
+    "data/passages/p04.public.json": {
+      "bytes": 3996,
+      "blake3": "blake3:b893f86150523acffd22d8313f88f2d7f8f67092b8d06ef9e32b057fb37b987e"
     },
-    "data/passages/p_2026-08-19.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:ecc1589f59ed5b80f42ed3206420be995f99307fdf5cfd17ece094d5092467e8"
+    "data/passages/p04.server.json": {
+      "bytes": 1852,
+      "blake3": "blake3:c89ffccf8663c160f93344c108ec78d266246b382af6ee6ead4adf6c4eac0e5b"
     },
-    "data/passages/p_2026-08-20.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:bc6b6dc47f32283ed226f8eaa5b6f3c01fbab6d999e379318c4ebc9434c92b24"
+    "data/passages/p05.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:8a60dd2dfbbd858a9418314ca1828db962afae74de3d100ba79015bcab2b10e5"
     },
-    "data/passages/p_2026-08-20.public.json": {
-      "bytes": 2639,
-      "blake3": "blake3:c175f1a5605ea976fff2b3c6d7dcf4336e503be31189b7e05c08554144303144"
+    "data/passages/p05.public.json": {
+      "bytes": 4065,
+      "blake3": "blake3:f0f405d338689bd266e8fe2ca31f1a0a9442b56470cdd45bd93d32adedadbd49"
     },
-    "data/passages/p_2026-08-20.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:75540cd9992054d679de45c9be5da2fef247fcfc9b38d695d9e8d3dbab6599b1"
+    "data/passages/p05.server.json": {
+      "bytes": 1912,
+      "blake3": "blake3:bceaac32e378f68dc5828609920c859abd9da7154bed067438b266058ae2dedf"
     },
-    "data/passages/p_2026-08-21.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:c8d799b76a745b70e204c42e62623677edce54a825002968715aeae102b9c4f0"
+    "data/passages/p06.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:d215bacd5bcc9b430dcd866897b8bdb88b11f238f734bcddf539dd6bf05c456b"
     },
-    "data/passages/p_2026-08-21.public.json": {
-      "bytes": 2430,
-      "blake3": "blake3:1e7fd3b5dce2a67d0155e2123e881cc3ec7789157a285afeffb051270cbad898"
+    "data/passages/p06.public.json": {
+      "bytes": 4069,
+      "blake3": "blake3:e55333f69c1fac65d63b2e4e6b4381f96e5acddeb7e74a89cc372980ff77b6af"
     },
-    "data/passages/p_2026-08-21.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:a33f6b1aafe199df60e2849c66b7ef0f804335a299a5719caaa774e795319bb4"
+    "data/passages/p06.server.json": {
+      "bytes": 1789,
+      "blake3": "blake3:2d02abdb46e6c54ae40ce838ae27dd3918987180eae59cf64e0d9761c5a468e8"
     },
-    "data/passages/p_2026-08-22.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:b69c4240ef3c9b382e292013dcb731fdedd76cbc3865bd7bdf6117cb140e0014"
+    "data/passages/p07.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:b34b3005f5c1cff91b88b796f1c6821fbcd479bbdef183639d465b3d189b2b25"
     },
-    "data/passages/p_2026-08-22.public.json": {
-      "bytes": 2599,
-      "blake3": "blake3:1d6164a40d45bf3218607a5d7f27c9ba1c88d427a35f1cb8bd739d3ae03d348a"
+    "data/passages/p07.public.json": {
+      "bytes": 4170,
+      "blake3": "blake3:ed2f04520ca85cf0fb1d5af2fe657c7ad53c3b82816e186ffea2fb5ce62b79e4"
     },
-    "data/passages/p_2026-08-22.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:b9a3adbf26de93a942b56f631a9e3b6dd76377e5e8585ccd16dbf61927170ad3"
+    "data/passages/p07.server.json": {
+      "bytes": 1759,
+      "blake3": "blake3:3fb6d2622c51e2785b150ef36010f36711c59a3188021260fedaac46face6a9d"
     },
-    "data/passages/p_2026-09-01.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:9587a7b973db8af934e70ae1857e4642d6e8e2e299bf1b491787f9188ec29465"
+    "data/passages/p08.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:5b13ca1128a30d19a4632a11cc592db1d80cfb4c296337e15cb71850f4db1c8f"
     },
-    "data/passages/p_2026-09-01.public.json": {
-      "bytes": 2512,
-      "blake3": "blake3:cab87e6da92893642ed32793edd7fa8d0563e112ef0cd9d3bc685842e808ede6"
+    "data/passages/p08.public.json": {
+      "bytes": 4311,
+      "blake3": "blake3:734975120975d3bfc930b0c7904fbb85a17ee8b1fade36c25e6e7d34d5ceefb5"
     },
-    "data/passages/p_2026-09-01.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:807178b1142e2ae4f8efee0f171f2401c976e3d0f05c72e87b198936e7ff0f46"
+    "data/passages/p08.server.json": {
+      "bytes": 1956,
+      "blake3": "blake3:93e5cca8d374385bd9cb2ba8438b2fe76ce9b453beb95084d867768615a1315f"
     },
-    "data/passages/p_2026-09-02.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:ea5a21ae887d1fa65e2bfea7cc36888fdd893600a8d80812202c8c75f87b3865"
+    "data/passages/p09.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:c478c4754ea2ca32df7918666b31c6f8ce5564a07c69bce5f2de666ccb3217cb"
     },
-    "data/passages/p_2026-09-02.public.json": {
-      "bytes": 2663,
-      "blake3": "blake3:ffaee76c9667e128c890b9f243ec9cc534601e5ac7b55a061146d22960d994c7"
+    "data/passages/p09.public.json": {
+      "bytes": 4236,
+      "blake3": "blake3:52387a1975298aad0171dc793e4271b99244138a4a22b8ad4415b682e6ede63a"
     },
-    "data/passages/p_2026-09-02.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:e1eaaa05e6dd3399780014a05b517c6e41202238766175afe431b107b51f41f0"
+    "data/passages/p09.server.json": {
+      "bytes": 1929,
+      "blake3": "blake3:8e181365df96ce925f43ba5cbada9055d7876d12405d7843b90599c0247ac7b2"
     },
-    "data/passages/p_2026-09-03.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:1e5ca7024dc44a7e74d51126614210e879739d30a3e303f8f55e060e86b629ae"
+    "data/passages/p10.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:d8d60c11c6d63ff50a12dfaf210774c10d8342cba50a27041013d5224ac28c70"
     },
-    "data/passages/p_2026-09-03.public.json": {
-      "bytes": 2536,
-      "blake3": "blake3:0f0a00c0c8a5ca1402a2feb624edbc0e5378ad75a85a122d1ae55007e0cc2c63"
+    "data/passages/p10.public.json": {
+      "bytes": 3958,
+      "blake3": "blake3:76d9a735ea1dc2840b57a6cf31f4fc7a7692d96b9a1092bbf3dae1265e90009d"
     },
-    "data/passages/p_2026-09-03.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:2e822ec870f97a309f3de17f6dbee9b9955d13b1b13b61e9d2da68260399ca1d"
+    "data/passages/p10.server.json": {
+      "bytes": 1805,
+      "blake3": "blake3:b621fbb30df2d45b14dbd2cff1246a493301ef2970893704ba70744d22a64e57"
     },
-    "data/passages/p_2026-09-04.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:0317bba59f0e5a6c2963b97aa1dd57f298574cefbbf4906c61bdc43109299b41"
+    "data/passages/p11.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:3b6b2051d77aa10d1d26630bd1994f042df50e47395659cb10f39c5668fcdca8"
     },
-    "data/passages/p_2026-09-04.public.json": {
-      "bytes": 2705,
-      "blake3": "blake3:40505811fcf769ff3a4c14ae3c78afc428a71993bfea5f9b34cb5b2777c02d65"
+    "data/passages/p11.public.json": {
+      "bytes": 4097,
+      "blake3": "blake3:623560f989ff4295a7c2593813089736ed6e1787aa805d5d6354539cb151d285"
     },
-    "data/passages/p_2026-09-04.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:2c0a21a269c17a720914bfa5915d7654ff8a66a93efceaf5330c3b4e9fe7b6b0"
+    "data/passages/p11.server.json": {
+      "bytes": 1784,
+      "blake3": "blake3:fbca4f7a3ea003f09ece06b2d672563a739c59f5892ee53bf9ee1577f7bbd550"
     },
-    "data/passages/p_2026-09-05.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:62f7b15078f8257842556635947486390e17eb0aafd867b00e797765aea52197"
+    "data/passages/p12.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:b09d87c1b5c135cd001b95de1122f6402732bd76af5cf2d73a0facf4a99f125f"
     },
-    "data/passages/p_2026-09-05.public.json": {
-      "bytes": 2535,
-      "blake3": "blake3:df24947513143dc90cd6c501190673e48575cf162d7104c2aef56bb407b7f8cf"
+    "data/passages/p12.public.json": {
+      "bytes": 4214,
+      "blake3": "blake3:9cb07debb3c369727386fd489edf2474160099f49129eb6c307ef16682a8dc53"
     },
-    "data/passages/p_2026-09-05.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:6e77ce35bd1cb2f8c196264b92a2ce6221af89f576a96d8f431b9936487a8c6f"
+    "data/passages/p12.server.json": {
+      "bytes": 1884,
+      "blake3": "blake3:7585d25f796e238c31cdc0be71f1c11f867e6c8c525d7b3044dbbc0938174ebe"
     },
-    "data/passages/p_2026-09-06.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:039238a83acae4160f4c2238b850392092abb25b080031af0c7ae8aa6a1f4797"
+    "data/passages/p13.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:0dea03951bbc24a0b332e517c2653cdccfc53d898eb391ea620008be08180dc1"
     },
-    "data/passages/p_2026-09-06.public.json": {
-      "bytes": 2501,
-      "blake3": "blake3:2c6ebd061a301a76ecc6122736d3b96b43332f2ad13bcad82e2018eaa01f0ca0"
+    "data/passages/p13.public.json": {
+      "bytes": 4391,
+      "blake3": "blake3:a65d4d93094343adbf8d2b5ffd5eca79c6352e41db39662019d48f182be4a27f"
     },
-    "data/passages/p_2026-09-06.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:61ebefe36a16388c190d0b0ed35aa923d0cf068202eb1ef75db64c699e899f97"
+    "data/passages/p13.server.json": {
+      "bytes": 1904,
+      "blake3": "blake3:f055f0e05dfc8c749fc5c56fba900c9c3eed69a76bb4102a60e1946f88e61cfd"
     },
-    "data/passages/p_2026-09-07.author.json": {
-      "bytes": 808,
-      "blake3": "blake3:854cd91f1d983b99379bfd12314e6916a0aac04610535a2b2efffed150efa4c7"
+    "data/passages/p14.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:7509c81c7e2a05968f6041c007160dfdb2784f4960a3903412db999d0fa5c761"
     },
-    "data/passages/p_2026-09-07.public.json": {
-      "bytes": 2412,
-      "blake3": "blake3:e0fdef5053e2c32f44976feade97f86529917848e8310030fffd2697c36349f7"
+    "data/passages/p14.public.json": {
+      "bytes": 4032,
+      "blake3": "blake3:bb2f4fdc69a14904cb79fc6d5459d06638dd3beb5e3efa850298130c799f478f"
     },
-    "data/passages/p_2026-09-07.server.json": {
-      "bytes": 101,
-      "blake3": "blake3:99ed7dc671116ba4b848423d0f491f6ec66a1d16e5ce8621f33c30bf986f40a7"
+    "data/passages/p14.server.json": {
+      "bytes": 1859,
+      "blake3": "blake3:c7ede911fdfc0613f42feff6d6f6b3e35b6f2c8680e0710dbdcb2aa081b1bff9"
     },
-    "data/passages/p_intro.author.json": {
-      "bytes": 803,
-      "blake3": "blake3:a103383788e684d28c9e994a8e664551efadbd0ef72c7a2d7c0e7d508ee4d1f8"
+    "data/passages/p15.author.json": {
+      "bytes": 799,
+      "blake3": "blake3:da9d92f94b4525ff38e20cc84c04105488832afe8a2f05bd4e1bc9268f0d1dca"
     },
-    "data/passages/p_intro.public.json": {
-      "bytes": 2465,
-      "blake3": "blake3:3697ec788413cab67c1f64ed3227b3e57d2105b6fc7993daf1bbbde62015d7d6"
+    "data/passages/p15.public.json": {
+      "bytes": 4028,
+      "blake3": "blake3:43efd78e9d58af430a64315295b34a0dada00efb8793df63ac0bfc5a8f44de01"
     },
-    "data/passages/p_intro.server.json": {
-      "bytes": 96,
-      "blake3": "blake3:6856253898be131c8e2b538d416b63e56c12acd57fb5eda3835f0a440e88c706"
+    "data/passages/p15.server.json": {
+      "bytes": 1825,
+      "blake3": "blake3:0f309301bde941e27eb855e6863c85584fd2c690a02e70dabdd1cb828cbee23f"
     },
     "data/passages/README.md": {
-      "bytes": 1425,
-      "blake3": "blake3:a2790f2266ca1d328978d1c13032e80e6f05a545637c1f4626e3752b3b26815f"
+      "bytes": 1900,
+      "blake3": "blake3:38f2ed848a723ec94994b72042aa1e4a0384549d81614b93d90a30bf68ce224e"
     },
     "data/regen/.gitkeep": {
       "bytes": 0,
@@ -285,7 +285,7 @@
     }
   },
   "env": {
-    "checked_at": "2026-08-16T04:38:17+00:00",
+    "checked_at": "2026-08-16T06:12:59+00:00",
     "python": "3.12.14",
     "platform": "Windows 11 (AMD64)",
     "torch": "2.13.0+cpu",

@@ -1,4 +1,4 @@
-# Makefile — a thin shim. TECH_PLAN.md §3, §6.4.
+# Makefile — a thin shim. .build-docs/TECH_PLAN.md §3, §6.4.
 #
 # Every target is `uv run ...` so it works identically on Windows, macOS and
 # Linux, and so nothing depends on a venv being "activated". `make` itself is

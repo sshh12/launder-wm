@@ -1,14 +1,15 @@
 ##
 ## launder-core — pure Python. No torch, no FastAPI, no network.
 ##
-## HARD INVARIANT (TECH_PLAN.md §2.1): `import launder_core` must succeed in a
-## venv containing only the three dependencies below. CI enforces it with a
-## bare-venv import test. This is what keeps torch out of the Railway image.
+## HARD INVARIANT (.build-docs/TECH_PLAN.md §2.1): `import launder_core` must
+## succeed in a venv containing only the three dependencies below. CI enforces
+## it with a bare-venv import test. This is what keeps torch out of the Railway
+## image.
 ##
 [project]
 name = "launder-core"
 version = "0.1.0"
-description = "Launder LM core: watermark, detector, scoring, gates, schemas"
+description = "Launder WM core: watermark, detector, scoring, gates, schemas"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
 dependencies = [

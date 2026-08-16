@@ -4,7 +4,7 @@ Core's `llm_gate` check calls `deps.judge.observe(passage, normalized, nonce)`
 and derives the verdict from what comes back. Everything between "a submission
 reached check 8" and "a model was actually asked" is serve's, and it is this
 class: the process LRU, the global cache, the per-IP bucket, the daily spend
-ledger, one retry, then failover.
+ledger, then ONE provider with one retry, then fail open provisional.
 
 | rung | mechanism                               | cost of an abusive request |
 |------|-----------------------------------------|----------------------------|
@@ -64,11 +64,26 @@ __all__ = ["EST_USD_PER_CALL", "RATE_LIMITED", "REQUEST_CLIENT_KEY", "CachingJud
 
 _log = logging.getLogger("launder.judge")
 
-#: §7.5's cost table: ~1,380 input + ~90 output tokens is ~$0.0004 on the cheap
-#: OpenAI tier, cold. Reserved BEFORE the call because the ledger has to be
-#: atomic with the decision to spend; §9.6's `SpendRepo` has no reconciliation
-#: call, so a call that ends up cheaper simply leaves headroom.
-EST_USD_PER_CALL: Final[float] = 0.0004
+#: What one judge call reserves from the daily ledger, in USD. The DEFAULT for
+#: `Settings.judge_est_usd_per_call`, which is what `CachingJudge` is actually
+#: given — this constant is the single source of that default and nothing else.
+#:
+#: Derivation, from the live probe of `gpt-5.6-terra` with this repo's exact
+#: request body (a real 250-word passage with a 6-claim list): 1,887 input +
+#: 164 output tokens, 0 reasoning tokens at `effort: "none"`.
+#:
+#: ASSUMPTION, NOT VERIFIED: the price per token. The token counts above were
+#: measured; the dollars-per-token they are multiplied by were not checked
+#: against a live pricing page. $0.005 is that product rounded up, and it is the
+#: number to re-derive first if the bill and the ledger ever disagree.
+#:
+#: Accuracy matters in BOTH directions, because the ledger reserves this value
+#: BEFORE each call and §9.6's `SpendRepo` has no reconciliation call:
+#: too low  -> the cap is passed before the ledger notices and the real bill
+#:             overshoots what the operator authorised;
+#: too high -> the ledger refuses early and levels start clearing provisionally
+#:             while most of the authorised budget is still unspent.
+EST_USD_PER_CALL: Final[float] = 0.005
 
 #: Set by `CachingJudge` when it refuses a call, read by `/api/submit` to turn
 #: the fail-open clear into the 429 §9.3 specifies. Request-scoped.
@@ -84,7 +99,7 @@ REQUEST_CLIENT_KEY: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 
 class CachingJudge:
-    """A `JudgeProvider` that wraps a provider chain in the §7.5 abuse ladder."""
+    """A `JudgeProvider` that wraps ONE provider in the §7.5 abuse ladder."""
 
     name: ClassVar[str] = "caching"
 
@@ -92,7 +107,6 @@ class CachingJudge:
         self,
         *,
         provider: JudgeProvider,
-        failover: JudgeProvider | None,
         cache: JudgeCacheRepo,
         spend: SpendRepo,
         limiter: TokenBucketLimiter,
@@ -102,11 +116,15 @@ class CachingJudge:
         separator: str = "\x1f",
         lru_entries: int = 2000,
         cache_failures: bool = True,
+        #: DELIBERATELY not the shipped cap. The app factory always passes
+        #: `Settings.judge_daily_usd_cap`, so this default is only ever reached by
+        #: a hand-constructed judge in a test or a script — and the safe number
+        #: for those is a small one, not the production spend authorisation.
         daily_usd_cap: float = 2.0,
+        est_usd_per_call: float = EST_USD_PER_CALL,
         max_retries: int = 1,
     ) -> None:
         self.provider = provider
-        self.failover = failover
         self.cache = cache
         self.spend = spend
         self.limiter = limiter
@@ -116,6 +134,7 @@ class CachingJudge:
         self.separator = separator
         self.cache_failures = cache_failures
         self.daily_usd_cap = daily_usd_cap
+        self.est_usd_per_call = est_usd_per_call
         self.max_retries = max_retries
         self._lru: OrderedDict[str, Observation] = OrderedDict()
         self._lru_max = lru_entries
@@ -124,7 +143,6 @@ class CachingJudge:
             "lru_hits": 0,
             "repo_hits": 0,
             "calls": 0,
-            "failovers": 0,
             "rate_limited": 0,
             "spend_refused": 0,
             "errors": 0,
@@ -206,7 +224,7 @@ class CachingJudge:
 
         # --- rung 4: atomic daily spend ledger ------------------------------
         today = day or datetime.now(UTC).date()
-        if not await self.spend.reserve(today, EST_USD_PER_CALL, self.daily_usd_cap):
+        if not await self.spend.reserve(today, self.est_usd_per_call, self.daily_usd_cap):
             self.stats["spend_refused"] += 1
             _log.warning(
                 "judge daily spend cap $%.2f reached; degrading to provisional",
@@ -214,7 +232,7 @@ class CachingJudge:
             )
             raise JudgeError(self.name, "daily spend cap reached", retryable=False)
 
-        obs, usage = await self._observe_with_failover(passage, normalized, nonce)
+        obs, usage = await self._observe_with_retry(passage, normalized, nonce)
         self._lru_put(key, obs)
         await self.cache.put(
             key,
@@ -236,13 +254,18 @@ class CachingJudge:
         )
         return obs
 
-    async def _observe_with_failover(
+    async def _observe_with_retry(
         self, passage: PassagePublic, normalized: str, nonce: str
     ) -> tuple[Observation, JudgeUsage]:
-        """Primary, one retry on a retryable failure, then the second provider.
+        """One provider, one retry on a retryable failure, then raise.
 
-        Never both on every submit: that doubles cost and latency for a gate
-        whose hard cases are already deterministic (§7.5).
+        Raising is the WHOLE fail-open path: core catches `JudgeUnavailable` and
+        clears the submission provisionally. There is no second vendor to fall
+        through to, and adding one would double cost and latency on a gate whose
+        hard cases are already caught deterministically before it runs (§7.5).
+
+        A non-retryable failure does not burn the retry: a 400 will be a 400
+        again, and the extra round trip is latency the player pays for.
         """
         attempts = self.max_retries + 1
         last: JudgeError | None = None
@@ -254,10 +277,6 @@ class CachingJudge:
                 last = exc
                 if not exc.retryable or attempt == attempts - 1:
                     break
-        if self.failover is not None:
-            self.stats["failovers"] += 1
-            self.stats["calls"] += 1
-            return await _call(self.failover, passage, normalized, nonce)
         self.stats["errors"] += 1
         assert last is not None  # the loop cannot exit without setting it
         raise last

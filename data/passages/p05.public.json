@@ -1,0 +1,70 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p05",
+  "level_id": "L1",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Salt mining, a practice with a surprisingly long history, involves extracting sodium chloride – commonly known as salt – from deposits found beneath the Earth’s surface. The method employed depends largely on the geological context of the deposit, with several distinct techniques utilized across the globe. In solution mining, water is pumped deep into the salt deposit, dissolving the salt and creating a brine solution. This brine is then pumped back to the surface, where the water is evaporated to crystallize the salt. This process is particularly common in areas with vast, relatively shallow salt beds. In underground mining, tunnels are excavated into the salt deposit, similar to coal mining, and the salt is then extracted in large blocks or slabs. This method is often used when the salt deposit is deeper and more complex in structure. Rock salt, formed over millions of years from ancient seas, is typically mined using room-and-pillar mining, leaving behind supportive pillars of salt that prevent the mine roof from collapsing.  Finally, solar salt evaporation, prevalent in arid regions, relies on the sun’s heat to evaporate seawater, leaving behind salt crystals. Regardless of the method, careful consideration must be given to environmental impact, including managing brine disposal and minimizing land disturbance, as salt mining operations can significantly alter the landscape and surrounding hydrology.",
+  "n_words": 218,
+  "detector": {
+    "expected_n_scored": 252,
+    "expected_score": 0.5313396692707038,
+    "expected_z": 5.341744587913522,
+    "g_digest": "blake3:497cd95abe297c4c4b0a252f98b250008cc13c50340734c9ddd76bdf59ff8506"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Salt mining extracts sodium chloride, commonly known as salt, from deposits found beneath the Earth's surface.",
+      "label": "salt from underground deposits",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "The mining method used depends largely on the geological context of the deposit.",
+      "label": "geology choosing the method",
+      "required": false
+    },
+    {
+      "id": "c3",
+      "text": "In solution mining, water is pumped into the salt deposit to dissolve the salt into a brine, which is pumped back to the surface and evaporated to crystallize the salt.",
+      "label": "solution mining with brine",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "In underground mining, tunnels are excavated into the salt deposit much as in coal mining and the salt is extracted in large blocks or slabs.",
+      "label": "underground tunnel mining",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Rock salt is typically mined by room-and-pillar mining, which leaves supporting pillars of salt behind to keep the mine roof from collapsing.",
+      "label": "room-and-pillar support",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Solar salt evaporation, common in arid regions, uses the sun's heat to evaporate seawater and leave salt crystals behind.",
+      "label": "solar evaporation of seawater",
+      "required": true
+    },
+    {
+      "id": "c7",
+      "text": "Salt mining requires careful attention to environmental impact, including brine disposal and limiting land disturbance, because operations can significantly alter the landscape and hydrology.",
+      "label": "the environmental impact",
+      "required": false
+    }
+  ],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

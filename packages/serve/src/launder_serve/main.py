@@ -12,7 +12,8 @@ Boot order, and why:
    `wm_config_id` that disagrees with the passages must stop the process, not
    produce a server that renders confident, meaningless numbers.
 2. Assert the judge's `prompt_hash` against `judge.toml`.
-3. Build the repositories, the judge chain and the engine seams.
+3. Build the repositories, the judge (one provider, wrapped in the abuse
+   ladder) and the engine seams.
 4. Mount routes.
 
 Anything that can be wrong is wrong here, loudly, before a player sees it.
@@ -35,7 +36,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from launder_core.levels import unsatisfiable_levels
 from launder_core.schemas import MAX_TEXT_BYTES
 from launder_serve.api import api_router
-from launder_serve.api.deps import AppState, today_utc
+from launder_serve.api.deps import AppState
 from launder_serve.boot import BootRenderer
 from launder_serve.content import Content, error_message, load_content
 from launder_serve.engine import CoreDetector, CoreScorer, ServerDetector
@@ -45,20 +46,21 @@ from launder_serve.judge import (
     JudgeProvider,
     assert_prompt_hash,
     build_provider,
+    resolve_model,
     resolve_prompt_hash,
 )
 from launder_serve.limits import TokenBucketLimiter
 from launder_serve.repo.memory import (
-    MemoryDailyRepo,
     MemoryJudgeCacheRepo,
+    MemoryProgressRepo,
     MemorySpendRepo,
     MemorySubmissionRepo,
 )
-from launder_serve.repo.protocol import DailyRepo, JudgeCacheRepo, SpendRepo, SubmissionRepo
+from launder_serve.repo.protocol import JudgeCacheRepo, ProgressRepo, SpendRepo, SubmissionRepo
 from launder_serve.settings import Settings, get_settings
 from launder_serve.static import AUTHOR_ONLY_SUFFIXES, IMMUTABLE, PrecompressedStaticFiles
 
-__all__ = ["RepoSet", "create_app", "run"]
+__all__ = ["LEVEL_COOKIE", "RepoSet", "create_app", "resolve_level_n", "run"]
 
 _log = logging.getLogger("launder")
 
@@ -67,13 +69,18 @@ _log = logging.getLogger("launder")
 #: into memory, not after.
 MAX_BODY_BYTES = MAX_TEXT_BYTES
 
+#: Written by the CLIENT only, on a clear (`min(level_n + 1, level_count)`). It
+#: exists so `GET /` can render the right level with zero API calls and no
+#: flash of level 1 — the server reads it and never sets it.
+LEVEL_COOKIE = "launder_level"
+
 
 @dataclass
 class RepoSet:
     submissions: SubmissionRepo
     judge_cache: JudgeCacheRepo
     spend: SpendRepo
-    dailies: DailyRepo
+    progress: ProgressRepo
     engine: Any | None = None
 
     @classmethod
@@ -82,7 +89,7 @@ class RepoSet:
             submissions=MemorySubmissionRepo(),
             judge_cache=MemoryJudgeCacheRepo(),
             spend=MemorySpendRepo(),
-            dailies=MemoryDailyRepo(),
+            progress=MemoryProgressRepo(),
         )
 
 
@@ -184,7 +191,7 @@ def create_app(
     )
     warnings.extend(content.warnings)
     warnings.extend(settings.assert_keys_present())
-    settings.assert_model_pinned()
+    settings.assert_model_pinned(resolve_model(content, settings))
     warnings.extend(assert_prompt_hash(content, settings))
     prompt_hash = resolve_prompt_hash(content, settings)
 
@@ -203,10 +210,8 @@ def create_app(
         )
 
     if judge is None:
-        provider, failover = build_provider(content, settings, http=http)
         judge = CachingJudge(
-            provider=provider,
-            failover=failover,
+            provider=build_provider(content, settings, http=http),
             cache=repos.judge_cache,
             spend=repos.spend,
             limiter=limiter,
@@ -217,6 +222,7 @@ def create_app(
             lru_entries=content.judge.cache.lru_entries,
             cache_failures=content.judge.cache.cache_failures,
             daily_usd_cap=settings.judge_daily_usd_cap,
+            est_usd_per_call=settings.judge_est_usd_per_call,
             max_retries=content.judge.max_retries,
         )
 
@@ -229,9 +235,10 @@ def create_app(
     # checks declare, so L5 booted perfectly clean and then raised
     # `GateDependencyError` as an unhandled 500 on its first submit.
     #
-    # An unserviceable level is DROPPED here, loudly, so requests naming it get
-    # the ordinary `unknown_level` 404 instead of a 500 — and SCHEDULING one is
-    # a hard boot failure, because that is a day that would be unplayable.
+    # An unserviceable ruleset is DROPPED here, loudly, so requests naming it
+    # get the ordinary `unknown_level` 404 instead of a 500 — and running a
+    # CAMPAIGN level under one is a hard boot failure, because that is a level
+    # of the campaign nobody could ever get past.
     content = _drop_unserviceable_levels(content, warnings)
 
     state = AppState(
@@ -242,7 +249,7 @@ def create_app(
         detector=detector or CoreDetector(),
         judge=judge,
         submissions=repos.submissions,
-        dailies=repos.dailies,
+        progress=repos.progress,
         limiter=limiter,
         engine=repos.engine,
         http=http,
@@ -254,11 +261,12 @@ def create_app(
         for warning in state.boot_warnings:
             _log.warning("boot: %s", warning)
         _log.info(
-            "launder-serve up: env=%s sha=%s wm_config_id=%s judge=%s passages=%d",
+            "launder-serve up: env=%s sha=%s wm_config_id=%s judge=%s levels=%d passages=%d",
             settings.env,
             settings.sha,
             content.wm_config_id,
             settings.judge_provider,
+            content.level_count,
             len(content.passages),
         )
         await _prepare_database(settings, repos)
@@ -271,7 +279,7 @@ def create_app(
                 await repos.engine.dispose()
 
     app = FastAPI(
-        title="Launder LM",
+        title="Launder WM",
         version="0.1.0",
         lifespan=lifespan,
         docs_url="/api/docs" if not settings.is_production else None,
@@ -313,13 +321,43 @@ def create_app(
     return app
 
 
+def resolve_level_n(query: str | None, cookie: str | None, level_count: int) -> int:
+    """Which level `GET /` renders: `?level=`, then the cookie, then 1.
+
+    `?level=` is the TEST ESCAPE HATCH. It renders that level regardless of
+    progress and does NOT write the cookie, so a scripted run can reach level 12
+    without playing eleven levels first and without leaving the browser
+    convinced it belongs there.
+
+    Anything that is not an integer inside `1..level_count` falls back to 1
+    rather than being clamped into range: clamping would render level 15 for a
+    typo'd `?level=150`, and a test meaning "that level does not exist" would
+    then pass against the wrong page.
+    """
+    for raw in (query, cookie):
+        if raw is None:
+            continue
+        try:
+            n = int(raw.strip())
+        except ValueError:
+            return 1
+        if 1 <= n <= level_count:
+            return n
+        # A present-but-unusable value ENDS the search rather than falling
+        # through to the next source: a bad `?level=` quietly rendering whatever
+        # the cookie says would make the escape hatch untrustworthy exactly when
+        # a test is relying on it.
+        return 1
+    return 1
+
+
 def _mount_index(app: FastAPI, state: AppState, settings: Settings) -> None:
     """`GET /` renders `index.html`. **BEFORE the static catch-all** (§11.4).
 
     This route is the whole of §5.4 step 1. Without it `StaticFiles(html=True)`
     served the checked-in DEV FIXTURE verbatim — `"dev": true`, `"passage_id":
     "p_dev"`, `"assets": null` — so `main.ts`'s `upgrade()` bailed on the first
-    line, the local detector never loaded, and the daily passage was never
+    line, the local detector never loaded, and the level's passage was never
     delivered to the client at all.
     """
     renderer = BootRenderer(settings.web_dist_path, state.content, state.detector)
@@ -344,18 +382,31 @@ def _mount_index(app: FastAPI, state: AppState, settings: Settings) -> None:
     @app.get("/", include_in_schema=False)
     @app.get("/index.html", include_in_schema=False)
     async def index(request: Request) -> Response:
-        html = renderer.render(today_utc())
+        level_n = resolve_level_n(
+            request.query_params.get("level"),
+            request.cookies.get(LEVEL_COOKIE),
+            state.content.level_count,
+        )
+        html = renderer.render(level_n)
         if html is None:
-            # Nothing to render: no scheduled passage AND no dev fixture. Serving
+            # Nothing to render: no packed passages AND no dev fixture. Serving
             # the raw template would hand the player a page whose every API call
             # 404s, so say so instead.
-            raise NotFound("unknown_passage", day=today_utc().isoformat())
+            raise NotFound("unknown_passage", level_n=level_n)
         return HTMLResponse(
             content=html,
-            # `no-cache`, not `no-store`: revalidation is cheap and the ETag
-            # makes the common case a 304 (§11.4). The page is per-day, per
-            # passage and carries a live reading, so it is never `immutable`.
-            headers={"Cache-Control": "no-cache", "Vary": "Accept-Encoding"},
+            headers={
+                # `private`, because the page the cookie selected is this
+                # player's level and a shared cache handing it to the next
+                # visitor would drop them into somebody else's campaign.
+                # `no-cache` rather than `no-store`: revalidation is cheap and
+                # the ETag makes the common case a 304 (§11.4).
+                "Cache-Control": "private, no-cache",
+                # `Cookie` is load-bearing: the body depends on `launder_level`,
+                # so a cache keyed on the URL alone would serve level 1 to
+                # everyone who ever got there first.
+                "Vary": "Cookie, Accept-Encoding",
+            },
         )
 
 
@@ -365,21 +416,22 @@ WIRED_DEPS: frozenset[str] = frozenset({"detector", "judge"})
 
 
 def _drop_unserviceable_levels(content: Content, warnings: list[str]) -> Content:
-    """Remove levels whose checks need a dependency this process cannot provide."""
+    """Remove rulesets whose checks need a dependency this process cannot provide."""
     from dataclasses import replace as dataclass_replace
 
     unserviceable = unsatisfiable_levels(content.levels, WIRED_DEPS)
     if not unserviceable:
         return content
 
-    for slot in content.schedule.days:
-        if slot.level_id in unserviceable and slot.passage_id in content.passages:
-            missing = ", ".join(sorted(unserviceable[slot.level_id]))
+    for entry in content.campaign:
+        if entry.level_id in unserviceable:
+            missing = ", ".join(sorted(unserviceable[entry.level_id]))
             raise RuntimeError(
-                f"schedule.toml runs {slot.date.isoformat()} on level {slot.level_id}, whose "
+                f"progression.toml runs level {entry.n} under rules {entry.level_id}, whose "
                 f"checks require Deps.{missing} — which this process does not provide. That "
-                "day would be a 500 on the first submit. Wire the dependency, or schedule a "
-                "different level."
+                "level would be a 500 on the first submit, and because the campaign is "
+                "linear it would strand every player who reached it. Wire the dependency, "
+                "or run that level under a different ruleset."
             )
 
     for level_id, missing_deps in sorted(unserviceable.items()):
@@ -444,8 +496,8 @@ def _mount_static(app: FastAPI, settings: Settings) -> None:
 
 def _default_repos(settings: Settings) -> RepoSet:
     from launder_serve.repo.sqlalchemy import (
-        SqlDailyRepo,
         SqlJudgeCacheRepo,
+        SqlProgressRepo,
         SqlSpendRepo,
         SqlSubmissionRepo,
         make_engine,
@@ -456,7 +508,7 @@ def _default_repos(settings: Settings) -> RepoSet:
         submissions=SqlSubmissionRepo(engine),
         judge_cache=SqlJudgeCacheRepo(engine),
         spend=SqlSpendRepo(engine),
-        dailies=SqlDailyRepo(engine),
+        progress=SqlProgressRepo(engine),
         engine=engine,
     )
 

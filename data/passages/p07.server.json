@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p07",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Coffee grading evaluates the quality and characteristics of green coffee beans before they are roasted.",
+      "label": "grading beans before roasting",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Grading rests on a trained evaluator's sensory judgement rather than on a numerical score alone.",
+      "label": "the trained evaluator's judgement",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "Beans are examined under bright light, often with a magnifying glass, for defects such as broken beans, chipped beans, insect damage, or discoloration, which lower the grade.",
+      "label": "the inspection for defects",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "Graders assess the bean's appearance, noting uniformity of size and colour and the presence of silver skin.",
+      "label": "the bean's appearance",
+      "required": false
+    },
+    {
+      "id": "c5",
+      "text": "Beans are evaluated for density, which reflects the bean's internal structure and its potential for consistent roasting.",
+      "label": "the density of the bean",
+      "required": false
+    },
+    {
+      "id": "c6",
+      "text": "Graders assess the bean's aroma, describing the scents with terms such as floral, fruity, nutty, or chocolatey.",
+      "label": "the aroma descriptors",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "The assessment ends in a grade that typically ranges from 'Specialty' to 'Commodity'.",
+      "label": "the Specialty-to-Commodity grades",
+      "required": true
+    }
+  ],
+  "par": 4
+}

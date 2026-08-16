@@ -80,10 +80,11 @@ export async function submitText(o: SubmitOptions): Promise<SubmitOutcome> {
   }
 }
 
-/** localStorage UUID. NOT identity, NOT trusted; used only for streaks. */
+/** localStorage UUID. NOT identity, NOT trusted; it is the key the server files
+ *  campaign progress under, and nothing else. */
 export function sessionId(storage: Storage | null): string | null {
   if (storage === null) return null;
-  const key = "launderlm.session.v1";
+  const key = "launderwm.session.v1";
   try {
     const existing = storage.getItem(key);
     if (existing !== null && existing !== "") return existing;

@@ -497,7 +497,6 @@ def test_pack_recomputes_the_detector_expectations(
     assert packed.public.detector.g_digest == truth.digest
 
     out_root = P(tmp_path)
-    (tmp_path / "TECH_PLAN.md").write_text("x", encoding="utf-8")
     written = write_passage(out_root, packed)
     public = json.loads(written["public"].read_text(encoding="utf-8"))
     assert public["schema"] == "launder.passage.public/1"

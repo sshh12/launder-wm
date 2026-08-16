@@ -125,7 +125,9 @@
     border-top: 1px solid var(--rule);
     border-bottom: 1px solid var(--rule);
     padding: var(--sp-3) 0;
-    margin-bottom: 9px;
+    /* The caption that used to sit under the strip carried this gap; the strip
+       now runs straight into "Your job: wash it out." and needs it itself. */
+    margin-bottom: 26px;
   }
   .pr-demo .mirror {
     padding: 0;
@@ -133,27 +135,11 @@
     line-height: 28px;
     min-height: 0;
   }
-  .pr-cap {
-    font-size: 10px;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-    color: var(--ink-2);
-    line-height: 17px;
-    margin: 0 0 17px;
-    max-width: 38ch;
-  }
   .pr-foot {
     display: flex;
     align-items: center;
     gap: 14px;
     border-top: 1px solid var(--rule);
     padding-top: 15px;
-  }
-  .pr-daily {
-    flex: none;
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--ink-2);
   }
 }

@@ -18,7 +18,7 @@
  */
 
 import { renderDiff, words } from "./diff";
-import { formatZ } from "./needle";
+import { formatPoints, type PointsScale } from "./needle";
 import type { Sheets } from "./primer";
 import type {
   CheckResultWire,
@@ -120,6 +120,9 @@ export interface GateElements {
   resultSyms: HTMLElement;
   resultDiff: HTMLElement;
   resultShare: HTMLElement;
+  resultActions: HTMLElement;
+  allClear: HTMLElement;
+  nextButton: HTMLElement;
   copyButton: HTMLElement;
   checkButton: HTMLButtonElement;
   changed: HTMLElement[];
@@ -134,6 +137,18 @@ export interface GateOptions {
   par: number | null;
   originalText: string;
   sheets: Sheets;
+  /** the z -> 0..100 relabelling, so the result's big number and the needle
+   *  the player was just watching cannot print different figures */
+  points: PointsScale;
+  /** 1-based campaign position, and the campaign's length */
+  levelN: number;
+  levelCount: number;
+  /** advance to the next level: write the cookie and the local record, then
+   *  navigate. Owned by main.ts, which owns the persistence. */
+  onNext: (res: SubmitResponseWire) => void;
+  /** the end-of-campaign share, built at show time from the whole progress
+   *  record — including the level that was cleared moments ago */
+  campaignShare: () => string;
 }
 
 interface Templated {
@@ -147,6 +162,9 @@ export class Gate {
   private pipSignature = "";
   private trace: CheckResultWire[] | null = null;
   private reading: Reading | null = null;
+  /** the response the open result sheet describes; the advance button needs
+   *  its distance and it must not be read from a later submission. */
+  private cleared: SubmitResponseWire | null = null;
 
   constructor(private readonly o: GateOptions) {
     this.specs = o.level.checks.map((spec) => ({
@@ -164,6 +182,10 @@ export class Gate {
       pip.addEventListener("click", () => this.openChecklist());
     }
     o.els.copyButton.addEventListener("click", () => void this.copyShare());
+    o.els.nextButton.addEventListener("click", () => {
+      const res = this.cleared;
+      if (res !== null) o.onNext(res);
+    });
 
     // ONE delegated handler covers every .checks container — the gate sheet,
     // the checklist sheet and the desktop rail, including the ones re-rendered
@@ -368,9 +390,10 @@ export class Gate {
 
   showResult(res: SubmitResponseWire, submittedText: string): void {
     const { els, copy } = this.o;
+    this.cleared = res;
     const distance = res.score.distance;
     els.resultTop.textContent = copy.t("readout.cleared_toast", { distance });
-    els.resultBig.textContent = formatZ(res.detector.z);
+    els.resultBig.textContent = formatPoints(res.detector.z, this.o.points);
     const sub = copy.t("readout.distance_label", { distance });
     const par = this.optional("screen.par_label", { par: this.o.par ?? 0 });
     els.resultSub.textContent = par !== null && this.o.par !== null ? `${sub} · ${par}` : sub;
@@ -383,8 +406,22 @@ export class Gate {
     }
 
     renderDiff(els.resultDiff, words(this.o.originalText), words(submittedText), res.score.ops);
-    els.resultShare.textContent = res.share ?? "";
-    els.resultShare.hidden = (res.share ?? "") === "";
+
+    // The end of the campaign is a different screen, not a different sheet: the
+    // advance button has nowhere to go, so it is replaced by the last line the
+    // game has to say and by the share that carries every level's score.
+    const last = this.o.levelN >= this.o.levelCount;
+    const share = last ? this.o.campaignShare() : (res.share ?? "");
+    els.nextButton.hidden = last;
+    els.allClear.hidden = !last;
+    // A copy button with nothing under it is a button that does nothing when
+    // pressed, so it follows the share box. On the last level that can leave
+    // the action bar holding no button at all — and an empty sticky bar still
+    // draws its rule and its 48px of padding.
+    els.copyButton.hidden = share === "";
+    els.resultActions.hidden = last && share === "";
+    els.resultShare.textContent = share;
+    els.resultShare.hidden = share === "";
     this.o.sheets.open(els.resultSheet.id);
   }
 

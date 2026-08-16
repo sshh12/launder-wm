@@ -241,7 +241,7 @@ def cache_key(
 
     The nonce is absent because the key hashes the normalized submission, not
     the rendered prompt: two players who converge on the same text share one
-    entry, and one daily passage for everyone means they converge a lot.
+    entry, and one passage per level for everyone means they converge a lot.
 
     `level_id` defaults to empty and is therefore **out** of the key. §7.5 lists
     it, but the model is never told which level it is judging — it reports

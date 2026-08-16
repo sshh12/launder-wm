@@ -41,10 +41,53 @@ export interface NeedleConfig {
   copy: Copy;
 }
 
-/** Two decimals: z* is 2.3263, and one decimal would print "2.3" on both sides
- *  of the line. The readout must never disagree with the verdict. */
-export function formatZ(z: number): string {
-  return z.toFixed(2);
+export const POINTS_MIN = 0;
+export const POINTS_MAX = 100;
+
+/** Everything `points()` needs; `NeedleConfig` satisfies it structurally, so
+ *  the needle, the gate and the rail all relabel against the same numbers. */
+export interface PointsScale {
+  zStar: number;
+  scale: { min: number; max: number };
+}
+
+/** Where z sits on the printed scale, as 0..100. This IS the scale — the
+ *  points readout is a monotone relabelling of z onto the ruler already drawn
+ *  under the needle, not a new quantity and emphatically not a probability. */
+function raw(z: number, cfg: PointsScale): number {
+  const span = cfg.scale.max - cfg.scale.min || 1;
+  return ((z - cfg.scale.min) / span) * 100;
+}
+
+/**
+ * The displayed number, 0..100.
+ *
+ * The instrument keeps working in z everywhere it matters — geometry,
+ * thresholds, the wire, the DB — because z is the statistic. Only what the
+ * player READS changes: z is a number nobody can place, and a scale printed
+ * -2..10 reads as broken.
+ *
+ * The two corrections below are not cosmetic. Rounding can put a value that is
+ * ABOVE the line onto the same integer as the line itself, and the readout must
+ * never disagree with the verdict — that is exactly the "2.3 on both sides of
+ * the line" bug the two-decimal z display was introduced to avoid, arriving
+ * again through a coarser scale. So the SIDE OF THE LINE WINS OVER THE
+ * ROUNDING: a z above z* is forced to at least pStar + 1, and a z at or below
+ * z* is forced down to pStar.
+ */
+export function points(z: number, cfg: PointsScale): number {
+  const pStar = Math.round(raw(cfg.zStar, cfg));
+  let p = Math.max(POINTS_MIN, Math.min(POINTS_MAX, Math.round(raw(z, cfg))));
+  if (z > cfg.zStar && p <= pStar) p = Math.min(pStar + 1, POINTS_MAX);
+  if (z <= cfg.zStar && p > pStar) p = pStar;
+  return p;
+}
+
+/** Never rendered with a `%` and never called a percentage: [readout]'s
+ *  standing rule is that the product shows no "% AI" figure, and a bare 0-100
+ *  number wearing a percent sign would read as exactly that. */
+export function formatPoints(z: number, cfg: PointsScale): string {
+  return String(points(z, cfg));
 }
 
 export class Needle {
@@ -76,6 +119,11 @@ export class Needle {
       typeof view?.matchMedia === "function"
         ? view.matchMedia("(prefers-reduced-motion: reduce)")
         : null;
+    // The meter speaks in points, so its bounds are the points bounds. They are
+    // set here rather than in index.html's checked-in markup alone, because the
+    // needle is the one place that knows what the number means.
+    els.meter.setAttribute("aria-valuemin", String(POINTS_MIN));
+    els.meter.setAttribute("aria-valuemax", String(POINTS_MAX));
     this.buildScale();
     this.measure();
     // The server positions the needle with `--init-x` (a percentage of the
@@ -106,7 +154,6 @@ export class Needle {
 
   private buildScale(): void {
     const doc = this.els.meter.ownerDocument;
-    const { min, max } = this.cfg.scale;
     // 21 hairline ticks at 5%; majors at 25%. The ticks ARE the scale, which is
     // why --rule is held to 3:1 (§10.6).
     for (let p = 0; p <= 100; p += 5) {
@@ -118,8 +165,11 @@ export class Needle {
     }
     for (const p of [0, 25, 50, 75, 100]) {
       const s = doc.createElement("span");
-      const z = min + ((max - min) * p) / 100;
-      s.textContent = Number.isInteger(z) ? String(z) : z.toFixed(1);
+      // The printed scale reads 0..100 because points ARE the position on the
+      // face: the label at 25% of the way along is 25, by construction. It used
+      // to print z, which is how a player ended up reading "-2" off the left end
+      // of a meter and concluding the instrument was broken.
+      s.textContent = String(p);
       if (p === 0) s.style.left = "0";
       else if (p === 100) {
         s.style.left = "100%";
@@ -220,7 +270,7 @@ export class Needle {
       this.armed = false;
       this.cleared = true;
       this.els.live.textContent = this.cfg.copy.t("readout.valuetext_below", {
-        z_display: formatZ(z),
+        z_display: formatPoints(z, this.cfg),
       });
       this.sweep();
       this.chime();
@@ -242,7 +292,8 @@ export class Needle {
     const below = z <= this.cfg.zStar;
     const flag = below ? "1" : "0";
     const { copy } = this.cfg;
-    this.els.num.textContent = formatZ(z);
+    const display = formatPoints(z, this.cfg);
+    this.els.num.textContent = display;
     // "Not detected", never "human": absence of a watermark does not prove a
     // person wrote it, and the readout must not claim more than the detector
     // can support (§10.7 rule 2).
@@ -253,11 +304,11 @@ export class Needle {
     this.els.notch.setAttribute("data-below", flag);
     this.els.tri.setAttribute("data-below", flag);
     this.els.floorLabel.setAttribute("data-below", flag);
-    this.els.meter.setAttribute("aria-valuenow", formatZ(z));
+    this.els.meter.setAttribute("aria-valuenow", display);
     this.els.meter.setAttribute(
       "aria-valuetext",
       copy.t(below ? "readout.valuetext_below" : "readout.valuetext_above", {
-        z_display: formatZ(z),
+        z_display: display,
       }),
     );
   }

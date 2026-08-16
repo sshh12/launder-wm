@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p01",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Hospital triage is an initial assessment process that rapidly categorizes patients by the severity of their condition and the urgency of their need for medical attention.",
+      "label": "the purpose of triage",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "On arrival, patients are immediately evaluated by a registered nurse or physician, often using a standardized protocol called the Emergency Severity Index (ESI).",
+      "label": "the Emergency Severity Index protocol",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "The triage assessment includes a focused history, measurement of vital signs such as temperature, pulse, blood pressure and respiration rate, and a brief physical examination.",
+      "label": "the vital signs measured",
+      "required": false
+    },
+    {
+      "id": "c4",
+      "text": "The assessment aims to determine whether a patient needs immediate life-saving intervention such as resuscitation or stabilization, or is stable enough to wait for further evaluation.",
+      "label": "the immediate-intervention decision",
+      "required": false
+    },
+    {
+      "id": "c5",
+      "text": "Patients are assigned an ESI score from 1 to 5, where 1 is the most urgent and 5 is the least critical.",
+      "label": "the 1-to-5 ESI scale",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Patients scoring ESI 1 or 2 are typically taken directly to a resuscitation room or intensive care unit, while scores of 3 and 4 send patients to designated treatment areas in the emergency department.",
+      "label": "the resuscitation-room routing",
+      "required": true
+    },
+    {
+      "id": "c7",
+      "text": "Triage is a dynamic process that is continually reassessed as patients' conditions change.",
+      "label": "continual reassessment",
+      "required": false
+    }
+  ],
+  "par": 4
+}

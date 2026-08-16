@@ -11,7 +11,9 @@ silently on Postgres.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -23,7 +25,9 @@ from launder_serve.settings import repo_root
 
 
 @pytest.fixture
-def alembic_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Config, Path]:
+def alembic_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[Config, Path]]:
     root = repo_root()
     ini = root / "alembic.ini"
     if not ini.is_file():
@@ -34,7 +38,27 @@ def alembic_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Con
     # `script_location` is relative to the working directory in the ini; pytest
     # does not run from the repo root.
     cfg.set_main_option("script_location", str(root / "alembic"))
-    return cfg, db
+
+    # `alembic/env.py` calls `logging.config.fileConfig(alembic.ini)`, and that
+    # defaults to `disable_existing_loggers=True`: it sets `.disabled` on every
+    # logger the ini does not name, PROCESS-WIDE and permanently. In a real
+    # `alembic upgrade head` that is harmless — the process exits. In pytest it
+    # silences the rest of the suite, and the symptom is a `caplog` assertion in
+    # a completely unrelated package failing with an empty log, only when the
+    # files are collected in the same run. Snapshot the flags and put them back.
+    manager = logging.Logger.manager
+    disabled = {
+        name: logger.disabled
+        for name, logger in manager.loggerDict.items()
+        if isinstance(logger, logging.Logger)
+    }
+    try:
+        yield cfg, db
+    finally:
+        for name, was_disabled in disabled.items():
+            logger = manager.loggerDict.get(name)
+            if isinstance(logger, logging.Logger):
+                logger.disabled = was_disabled
 
 
 def test_upgrade_head_creates_the_whole_schema(alembic_config: tuple[Config, Path]) -> None:
@@ -49,7 +73,11 @@ def test_upgrade_head_creates_the_whole_schema(alembic_config: tuple[Config, Pat
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
         }
 
-    assert {"daily_slot", "submission", "judge_cache", "spend_ledger"} <= tables
+    assert {"submission", "progress", "judge_cache", "spend_ledger"} <= tables
+    assert "daily_slot" not in tables, (
+        "the campaign has no daily slots; a table nobody writes is a schema that "
+        "still believes in dailies"
+    )
     assert "alembic_version" in tables
     assert {"submission_board_idx", "submission_dedup_idx", "judge_cache_version_idx"} <= indexes
 

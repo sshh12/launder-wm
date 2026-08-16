@@ -1,0 +1,70 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p14",
+  "level_id": "L4",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Kiln firing is a complex and carefully controlled process used to transform clay objects from a pliable, soft state into durable, permanent ceramic forms. At its core, it involves subjecting clay to high temperatures within a specialized oven – the kiln – to permanently alter its physical and chemical properties. The initial stage, called “bisque firing,” typically occurs around 1830°F (1000°C). During this phase, the clay body dries and shrinks, becoming relatively hard and porous, resembling a fragile, grey stone. This bisque firing removes almost all the remaining water content and begins to fuse the clay particles together. Subsequent firing, known as “glaze firing,” elevates the temperature significantly, often reaching 2000°F (1100°C) or higher, depending on the glaze composition. This extreme heat melts the glaze material, creating a glassy, decorative surface that bonds strongly to the fired clay beneath. Throughout the entire firing process, variables like temperature, atmosphere (oxidation or reduction), and firing rate are meticulously monitored and adjusted by the potter or ceramic artist. These factors dramatically influence the color, texture, and overall appearance of the final piece, demanding a deep understanding of both the clay and the glaze materials to achieve the desired outcome.  Proper firing is absolutely essential to ensure the piece is strong, durable, and resistant to cracking or warping.",
+  "n_words": 214,
+  "detector": {
+    "expected_n_scored": 271,
+    "expected_score": 0.5279822014521085,
+    "expected_z": 4.923771584509741,
+    "g_digest": "blake3:ef252a7e6f374e6574e71690d6b15cf7483c7f39ee6ff3c90fa74d9baee1eb44"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Kiln firing turns soft, pliable clay into a durable, permanent ceramic form by heating it to high temperatures inside a kiln.",
+      "label": "clay made permanent by heat",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "The first stage, bisque firing, typically takes place at around 1830°F (1000°C).",
+      "label": "the 1830°F bisque firing",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "Bisque firing dries and shrinks the clay into a hard, porous body, removing almost all the remaining water and beginning to fuse the clay particles.",
+      "label": "the hard, porous bisque body",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "The later glaze firing is much hotter, often reaching 2000°F (1100°C) or more depending on the glaze composition.",
+      "label": "the hotter glaze firing",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "That extreme heat melts the glaze into a glassy decorative surface that bonds strongly to the fired clay beneath.",
+      "label": "the glassy bonded glaze surface",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Throughout the firing the potter monitors and adjusts temperature, atmosphere (oxidation or reduction) and firing rate, which shape the colour, texture and appearance of the finished piece.",
+      "label": "the potter's control of atmosphere and rate",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Proper firing is essential to make the piece strong, durable and resistant to cracking or warping.",
+      "label": "firing for strength against cracking",
+      "required": false
+    }
+  ],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

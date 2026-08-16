@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p12",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Grain storage protects harvested grains such as wheat, corn and rice from environmental elements and biological deterioration over extended periods.",
+      "label": "protecting wheat, corn and rice",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Traditional storage used simple methods such as stacking bins, while modern systems use sophisticated technology to reduce losses.",
+      "label": "the shift from stacking bins",
+      "required": false
+    },
+    {
+      "id": "c3",
+      "text": "Temperature control is paramount because elevated temperatures accelerate enzymatic reactions and microbial growth, leading to rancidity, mold and nutrient degradation.",
+      "label": "heat driving spoilage",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "Most commercial storage facilities use refrigeration or ventilation to hold temperatures below 30°F (-1°C) for long-term preservation.",
+      "label": "the below-30°F storage temperature",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Excessively high humidity promotes fungal growth, while low humidity can dry the grain out and cause it to shatter.",
+      "label": "humidity in both directions",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Air circulation is vital to prevent localized hot and cold spots and to distribute moisture evenly.",
+      "label": "air circulation through the store",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Regular cleaning and pest control are essential to prevent contamination by insects, rodents and microorganisms.",
+      "label": "cleaning and pest control",
+      "required": true
+    }
+  ],
+  "par": 4
+}

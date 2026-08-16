@@ -191,9 +191,10 @@ class Observation(BaseModel):
 
 @runtime_checkable
 class JudgeProvider(Protocol):
-    """§7.5. Implemented by `serve` as `openai`, `anthropic`, `fake` and
-    `cassette`. Core depends on the protocol and nothing else — no SDK, no
-    network, no API key ever reaches this package."""
+    """§7.5. Implemented by `serve` as `openai`, `fake` and `cassette` — one paid
+    provider, plus two offline stand-ins for tests and CI. Core depends on the
+    protocol and nothing else — no SDK, no network, no API key ever reaches this
+    package."""
 
     name: ClassVar[str]
 

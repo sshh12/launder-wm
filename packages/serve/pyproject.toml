@@ -1,5 +1,6 @@
 ##
-## launder-serve — FastAPI. Depends on launder-core only (TECH_PLAN.md §2.1).
+## launder-serve — FastAPI. Depends on launder-core only
+## (.build-docs/TECH_PLAN.md §2.1).
 ##
 ## This is the ONLY package installed in the Railway image:
 ##   uv sync --locked --no-dev --package launder-serve
@@ -7,7 +8,7 @@
 [project]
 name = "launder-serve"
 version = "0.1.0"
-description = "Launder LM server: static hosting, /api/detect, /api/submit, the gate"
+description = "Launder WM server: static hosting, /api/detect, /api/submit, the gate"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
 dependencies = [
@@ -21,8 +22,6 @@ dependencies = [
     "psycopg[binary,pool]>=3.2",
     "aiosqlite>=0.21",
     "pydantic-settings>=2.10",
-    "openai>=2.0",
-    "anthropic>=0.69",
     "httpx>=0.28",
     # THE SERVER TOKENIZER. /api/detect addresses tokens by character offset so
     # the browser needs none in SERVER mode (§9.2), and detector_threshold

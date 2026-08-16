@@ -5,7 +5,7 @@ mounted `web/dist` verbatim, so every request got the checked-in DEV FIXTURE
 (`"dev": true`, `"passage_id": "p_dev"`, `"assets": null`). `main.ts` bails out
 of `upgrade()` on a falsy `assets`, so the TypeScript detector, the worker, the
 IndexedDB cache and the parity gate guarding them were all dead code at runtime,
-and the daily passage was never delivered to the client at all. Every
+and the level's passage was never delivered to the client at all. Every
 `/api/detect` the page made 404'd on `p_dev`.
 
 These tests use the REAL `web/index.html` as the template, because the thing
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +35,7 @@ from launder_serve.boot import (
     escape_for_textarea,
     json_for_script,
 )
-from launder_serve.content import Content
+from launder_serve.content import DEV_PASSAGE_ID, Content, load_content
 from launder_serve.engine import CoreDetector
 from launder_serve.main import create_app
 from launder_serve.settings import Settings, repo_root
@@ -83,23 +83,89 @@ def _textarea_of(html: str) -> str:
 
 
 def test_the_rendered_page_is_not_the_dev_fixture(
-    renderer: BootRenderer, scheduled_day: Any
+    renderer: BootRenderer, level_n: int, passage_id: str, level_id: str
 ) -> None:
-    html = renderer.render(scheduled_day.date)
+    html = renderer.render(level_n)
     assert html is not None
     boot = _boot_of(html)
-    assert boot["schema"] == "launder.boot/1"
+    assert boot["schema"] == "launder.boot/2"
     assert boot["dev"] is False
-    assert boot["passage_id"] == scheduled_day.passage_id
-    assert boot["level"]["id"] == scheduled_day.level_id
-    assert boot["day"] == scheduled_day.date.isoformat()
+    assert boot["passage_id"] == passage_id
+    assert boot["level"]["id"] == level_id
     # The checked-in fixture's tells, all gone.
     assert boot["asset_bundle_id"] != ""
     assert boot["wm_config_id"].startswith("wm1:")
 
 
+def test_the_boot_payload_carries_the_players_position_in_the_campaign(
+    renderer: BootRenderer, content: Content, level_n: int
+) -> None:
+    """`level_n` and `level_count` are the whole of "Level 3 of 15".
+
+    They replace `day` and `puzzle_number` outright: there is no date on the
+    wire any more, and nothing rolls over. A payload still carrying either
+    would mean the client renders a date it can no longer be given.
+    """
+    boot = _boot_of(renderer.render(level_n) or "")
+    assert boot["level_n"] == level_n
+    assert boot["level_count"] == content.level_count
+    assert 1 <= boot["level_n"] <= boot["level_count"]
+    assert "day" not in boot
+    assert "puzzle_number" not in boot
+
+
+def test_each_level_renders_its_own_passage(renderer: BootRenderer, content: Content) -> None:
+    """The cache is per level, not one slot: rendering level 2 must not hand
+    back the page level 1 was rendered into."""
+    for entry in content.campaign[:3]:
+        boot = _boot_of(renderer.render(entry.n) or "")
+        assert boot["level_n"] == entry.n
+        assert boot["passage_id"] == entry.passage_id
+        assert boot["level"]["id"] == entry.level_id
+
+
+def test_a_level_past_the_end_of_the_campaign_renders_nothing(
+    renderer: BootRenderer, content: Content
+) -> None:
+    """`render` is not a clamp. `main` resolves the request to a level that
+    exists first, and anything else is a bug that must not be papered over by
+    quietly serving level 1."""
+    assert renderer.render(content.level_count + 1) is None
+    assert renderer.render(0) is None
+
+
+def test_a_clone_with_no_packed_passages_still_renders_the_dev_fixture(
+    tmp_path: Path, dist: Path, real_data_root: Path
+) -> None:
+    """A fresh clone has an EMPTY `data/passages/` and must still be playable.
+
+    It cannot be filled without a GPU and the gated Gemma-3 weights, so the dev
+    fixture stands in for the whole campaign — level 1 of 1, `dev: true`. This
+    is the one state that is NOT a hole in the campaign, and it is why an empty
+    passage set does not trip `strict`.
+    """
+    if not (real_data_root / "dev" / "passage.txt").is_file():
+        pytest.skip("data/dev/passage.txt is not present in this checkout")
+    root = tmp_path / "bare"
+    (root / "passages").mkdir(parents=True)
+    shutil.copytree(real_data_root / "config", root / "config")
+    shutil.copytree(real_data_root / "assets", root / "assets")
+    shutil.copytree(real_data_root / "dev", root / "dev")
+
+    bare = load_content(root, is_production=False)
+    assert bare.dev is True
+    assert bare.level_count == 1
+    assert bare.campaign[0].passage_id == DEV_PASSAGE_ID
+
+    boot = _boot_of(BootRenderer(dist, bare, CoreDetector()).render(1) or "")
+    assert boot["dev"] is True
+    assert boot["passage_id"] == DEV_PASSAGE_ID
+    assert boot["level_n"] == 1
+    assert boot["level_count"] == 1
+
+
 def test_the_boot_payload_names_the_local_detector_assets(
-    renderer: BootRenderer, scheduled_day: Any
+    renderer: BootRenderer, level_n: int
 ) -> None:
     """`assets: null` is what killed the LOCAL path.
 
@@ -107,7 +173,7 @@ def test_the_boot_payload_names_the_local_detector_assets(
     — with the fixture's null the state machine never left SERVER, so the whole
     TS detector was unreachable in production.
     """
-    boot = _boot_of(renderer.render(scheduled_day.date) or "")
+    boot = _boot_of(renderer.render(level_n) or "")
     assets = boot["assets"]
     assert assets is not None
     assert assets["tokenizer_url"] == "/data/assets/gemma3-tok.v1.bin.br"
@@ -116,11 +182,11 @@ def test_the_boot_payload_names_the_local_detector_assets(
 
 
 def test_the_pristine_reading_is_inlined_so_the_first_paint_costs_no_api_call(
-    renderer: BootRenderer, scheduled_day: Any, content: Content
+    renderer: BootRenderer, level_n: int, passage_id: str, content: Content
 ) -> None:
     """§9.1: 'a first-time player makes ZERO API calls before playing'."""
-    boot = _boot_of(renderer.render(scheduled_day.date) or "")
-    bundle = content.passage(scheduled_day.passage_id)
+    boot = _boot_of(renderer.render(level_n) or "")
+    bundle = content.passage(passage_id)
     assert bundle is not None
     reading = boot["reading"]
     assert reading is not None
@@ -137,10 +203,10 @@ def test_the_pristine_reading_is_inlined_so_the_first_paint_costs_no_api_call(
 
 
 def test_the_primer_demo_is_generated_not_hand_painted(
-    renderer: BootRenderer, scheduled_day: Any, content: Content
+    renderer: BootRenderer, level_n: int, passage_id: str, content: Content
 ) -> None:
     """§10.7: 'GENERATED, never hand-painted ... it is forbidden'."""
-    boot = _boot_of(renderer.render(scheduled_day.date) or "")
+    boot = _boot_of(renderer.render(level_n) or "")
     demo = boot["primer_demo"]
     assert demo is not None
     assert demo["text"] == content.copy.raw["primer"]["demo"]
@@ -152,7 +218,7 @@ def test_the_primer_demo_is_generated_not_hand_painted(
 
 
 def test_the_primer_demo_teaches_the_RIGHT_heuristic(
-    renderer: BootRenderer, scheduled_day: Any, content: Content
+    renderer: BootRenderer, level_n: int, passage_id: str, content: Content
 ) -> None:
     """§10.7's UNGUARDED INVARIANT, now guarded.
 
@@ -170,7 +236,7 @@ def test_the_primer_demo_teaches_the_RIGHT_heuristic(
     """
     from launder_core.gates.checks.close_paraphrase import stopwords
 
-    boot = _boot_of(renderer.render(scheduled_day.date) or "")
+    boot = _boot_of(renderer.render(level_n) or "")
     demo = boot["primer_demo"]
     assert demo is not None, "the primer would render its sentence unstained"
     text = demo["text"]
@@ -197,9 +263,9 @@ def test_the_primer_demo_teaches_the_RIGHT_heuristic(
     )
 
 
-def test_the_copy_tree_is_inlined(renderer: BootRenderer, scheduled_day: Any) -> None:
+def test_the_copy_tree_is_inlined(renderer: BootRenderer, level_n: int) -> None:
     """§10.7: no player-facing string lives in web/src/, so all of copy.toml ships."""
-    boot = _boot_of(renderer.render(scheduled_day.date) or "")
+    boot = _boot_of(renderer.render(level_n) or "")
     assert boot["copy"]["readout"]["above"]
     assert boot["copy"]["check"]["detector_threshold"]["label"]
 
@@ -210,16 +276,16 @@ def test_the_copy_tree_is_inlined(renderer: BootRenderer, scheduled_day: Any) ->
 
 
 def test_the_passage_is_in_the_textarea_byte_for_byte(
-    renderer: BootRenderer, scheduled_day: Any, content: Content
+    renderer: BootRenderer, level_n: int, passage_id: str, content: Content
 ) -> None:
-    bundle = content.passage(scheduled_day.passage_id)
+    bundle = content.passage(passage_id)
     assert bundle is not None
-    html = renderer.render(scheduled_day.date) or ""
+    html = renderer.render(level_n) or ""
     assert _textarea_of(html) == escape_for_textarea(bundle.public.text)
 
 
 def test_no_whitespace_follows_the_textarea_start_tag(
-    renderer: BootRenderer, scheduled_day: Any, content: Content
+    renderer: BootRenderer, level_n: int, passage_id: str, content: Content
 ) -> None:
     """An HTML parser eats ONE newline directly after `<textarea>`.
 
@@ -227,9 +293,9 @@ def test_no_whitespace_follows_the_textarea_start_tag(
     one that was scored — and then `expected_z`, `g_digest` and the scoreboard
     all describe a text nobody is editing.
     """
-    bundle = content.passage(scheduled_day.passage_id)
+    bundle = content.passage(passage_id)
     assert bundle is not None
-    body = _textarea_of(renderer.render(scheduled_day.date) or "")
+    body = _textarea_of(renderer.render(level_n) or "")
     assert not body[:1].isspace()
     assert body.startswith(bundle.public.text[:20])
 
@@ -259,38 +325,132 @@ def test_the_boot_json_escapes_lt_as_a_unicode_escape_not_an_entity() -> None:
 
 
 def test_the_needle_and_the_readout_are_correct_before_any_js(
-    renderer: BootRenderer, scheduled_day: Any
+    renderer: BootRenderer, level_n: int
 ) -> None:
     """§5.4 step 1: correct before any network call AND before any JS."""
-    html = renderer.render(scheduled_day.date) or ""
+    html = renderer.render(level_n) or ""
     boot = _boot_of(html)
     z = boot["detector"]["expected_z"]
+    z_star = boot["detector"]["z_star"]
     pct = max(
         0.0,
         min(100.0, ((z - boot_mod.SCALE_MIN) / (boot_mod.SCALE_MAX - boot_mod.SCALE_MIN)) * 100.0),
     )
 
+    # The GEOMETRY is still z: the needle sits at the same place on the -2..10
+    # scale it always did. Only the printed number changed.
     face = re.search(r"--init-x: ([0-9.]+)%; --init-n: ([0-9.]+)", html)
     assert face is not None
     assert float(face.group(1)) == pytest.approx(pct, abs=1e-3)
     assert float(face.group(2)) == pytest.approx(pct / 100.0, abs=1e-3)
 
-    num = re.search(r'<span class="num" id="num" data-pending="(\d)">([^<]*)</span>', html)
+    # `[^>]*` because a below-the-line paint also carries `data-below="1"` here.
+    num = re.search(r'<span class="num" id="num" data-pending="(\d)"[^>]*>([^<]*)</span>', html)
     assert num is not None
     assert num.group(1) == "0", "the readout is no longer pending: the server computed it"
-    assert num.group(2) == f"{z:.2f}"
-    assert f'aria-valuenow="{z:.2f}"' in html
+    assert num.group(2) == str(boot_mod.points(z, z_star))
+    assert f'aria-valuenow="{boot_mod.points(z, z_star)}"' in html
+
+
+def test_the_readout_is_a_whole_number_of_points_on_a_0_100_meter(
+    renderer: BootRenderer, level_n: int
+) -> None:
+    """§11: z is a statistic nobody can place and -2..10 reads as broken.
+
+    The printed number is points, and the meter it is announced against says so
+    — a screen reader told "6.44 out of -2 to 10" while the screen says "70" is
+    describing an instrument nobody else can see.
+    """
+    html = renderer.render(level_n) or ""
+    assert 'aria-valuemin="0"' in html
+    assert 'aria-valuemax="100"' in html
+    num = re.search(r'<span class="num" id="num" data-pending="0"[^>]*>([^<]*)</span>', html)
+    assert num is not None
+    printed = num.group(1)
+    assert printed.isdigit()
+    assert 0 <= int(printed) <= 100
+    # Never a percentage: the product does not show a "% AI" figure, and a
+    # number carrying a % sign would read as exactly that.
+    assert "%" not in printed
+
+
+@pytest.mark.parametrize(
+    "z,expected",
+    [
+        (-2.0, 0),  # the bottom of the scale
+        (10.0, 100),  # the top
+        (-99.0, 0),  # clamped, not negative
+        (99.0, 100),  # clamped, not 842
+        (2.3263, 36),  # the notch itself
+        (6.44, 70),
+    ],
+)
+def test_points_is_the_documented_relabelling_of_z(z: float, expected: int) -> None:
+    assert boot_mod.points(z, 2.3263) == expected
+
+
+def test_the_readout_never_disagrees_with_the_verdict() -> None:
+    """The side of the line WINS OVER THE ROUNDING.
+
+    z* = 2.3263 rounds to 36 points, and so does every z from about 2.28 to
+    2.40 — including values ABOVE the notch. Printing 36 for one of those is
+    the "2.3 on both sides" bug that the two-decimal z display was introduced
+    to avoid, one relabelling later.
+    """
+    z_star = 2.3263
+    at_the_line = boot_mod.points(z_star, z_star)
+    just_above = boot_mod.points(z_star + 0.0001, z_star)
+    assert just_above > at_the_line
+    # ...and the whole neighbourhood above the notch stays above it.
+    for i in range(1, 60):
+        z = z_star + i * 0.001
+        assert boot_mod.points(z, z_star) > at_the_line, z
+    for i in range(1, 60):
+        z = z_star - i * 0.001
+        assert boot_mod.points(z, z_star) <= at_the_line, z
 
 
 def test_the_stateword_matches_the_side_of_the_line_the_needle_is_on(
-    renderer: BootRenderer, scheduled_day: Any
+    renderer: BootRenderer, level_n: int
 ) -> None:
-    html = renderer.render(scheduled_day.date) or ""
+    html = renderer.render(level_n) or ""
     boot = _boot_of(html)
     below = boot["detector"]["expected_z"] <= boot["detector"]["z_star"]
     want = "readout.below" if below else "readout.above"
     assert f'id="stateword" data-copy="{want}"' in html
     assert ('data-below="1"' in html) is below
+
+
+#: Every element `needle.ts`'s `writeReadout()` marks with `data-below`. The
+#: server's first paint has to mark the same set: `rail.css` styles `.num`,
+#: `.tri` and `.floorlbl` on the attribute too, so marking a subset paints a
+#: contradiction until the first client repaint.
+BELOW_MARKED_IDS = ("num", "stateword", "fill", "notch", "tri", "floorlbl")
+
+
+@pytest.mark.parametrize("below", [True, False])
+def test_below_the_line_paints_every_element_the_client_paints(
+    index_template: str, below: bool
+) -> None:
+    """THE ONE-FRAME LIE. `boot.py` marked #stateword, #fill and #notch only.
+
+    `needle.ts` marks six, and rail.css restyles `.num`, `.tri` and `.floorlbl`
+    on `data-below` — so a passage that starts BELOW the line was served with the
+    number still in the detected colour, sitting next to the words "Not
+    detected", until JS ran. Painting the state server-side exists precisely to
+    stop that frame, so a partial paint is worse than none: it is the same lie,
+    harder to spot.
+    """
+    z_star = 2.3263
+    z = z_star - 1.0 if below else z_star + 1.0
+    html = boot_mod.render_index(
+        index_template,
+        payload={"detector": {"expected_z": z, "z_star": z_star}},
+        passage_text="Some passage text.",
+    )
+    for element_id in BELOW_MARKED_IDS:
+        marked = re.search(rf'id="{element_id}"[^>]*data-below="1"', html) is not None
+        assert marked is below, f"#{element_id} data-below={marked}, expected {below}"
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +465,7 @@ def test_a_template_missing_a_region_raises_instead_of_shipping_the_fixture(
     (dist / "index.html").write_text(index_template.replace(marker, ""), encoding="utf-8")
     renderer = BootRenderer(dist, content, CoreDetector())
     with pytest.raises(MissingRegion):
-        renderer.render(date(2026, 9, 1))
+        renderer.render(1)
 
 
 def test_drifted_markup_raises_rather_than_rendering_a_wrong_instrument(
@@ -315,7 +475,7 @@ def test_drifted_markup_raises_rather_than_rendering_a_wrong_instrument(
     (dist / "index.html").write_text(broken, encoding="utf-8")
     renderer = BootRenderer(dist, content, CoreDetector())
     with pytest.raises(MissingRegion, match="#num readout"):
-        renderer.render(date(2026, 9, 1))
+        renderer.render(1)
 
 
 # ---------------------------------------------------------------------------
@@ -323,32 +483,89 @@ def test_drifted_markup_raises_rather_than_rendering_a_wrong_instrument(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.anyio
-async def test_get_slash_renders_and_does_not_fall_through_to_static(
-    dist: Path,
-    settings: Settings,
-    content: Content,
-    repos: Any,
-    scheduled_day: Any,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("launder_serve.main.today_utc", lambda: scheduled_day.date)
-    app = create_app(
+@pytest.fixture
+def page_app(dist: Path, settings: Settings, content: Content, repos: Any) -> Any:
+    return create_app(
         settings=settings.model_copy(update={"web_dist_dir": dist}),
         content=content,
         repos=repos,
         mount_static=True,
     )
-    async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
+
+
+@pytest.fixture
+async def page_client(page_app: Any) -> Any:
+    async with page_app.router.lifespan_context(page_app):
+        transport = httpx.ASGITransport(app=page_app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
-            for path in ("/", "/index.html"):
-                r = await http.get(path)
-                assert r.status_code == 200, path
-                assert r.headers["content-type"].startswith("text/html")
-                assert r.headers["cache-control"] == "no-cache"
-                boot = _boot_of(r.text)
-                assert boot["passage_id"] == scheduled_day.passage_id, (
-                    f"{path} fell through to the static mount and served the dev fixture"
-                )
-                assert boot["dev"] is False
+            yield http
+
+
+@pytest.mark.anyio
+async def test_get_slash_renders_and_does_not_fall_through_to_static(
+    page_client: httpx.AsyncClient, content: Content
+) -> None:
+    for path in ("/", "/index.html"):
+        r = await page_client.get(path)
+        assert r.status_code == 200, path
+        assert r.headers["content-type"].startswith("text/html")
+        boot = _boot_of(r.text)
+        assert boot["passage_id"] == content.campaign[0].passage_id, (
+            f"{path} fell through to the static mount and served the dev fixture"
+        )
+        assert boot["dev"] is False
+
+
+@pytest.mark.anyio
+async def test_a_visitor_with_no_cookie_gets_level_one(
+    page_client: httpx.AsyncClient, content: Content
+) -> None:
+    boot = _boot_of((await page_client.get("/")).text)
+    assert boot["level_n"] == 1
+    assert boot["level_count"] == content.level_count
+
+
+@pytest.mark.anyio
+async def test_the_cookie_selects_the_level_with_no_api_call(
+    page_client: httpx.AsyncClient, content: Content
+) -> None:
+    """The whole reason `launder_level` exists: the returning player's level is
+    in the FIRST paint, not one fetch and one reflow later."""
+    r = await page_client.get("/", headers={"Cookie": "launder_level=4"})
+    boot = _boot_of(r.text)
+    assert boot["level_n"] == 4
+    assert boot["passage_id"] == content.campaign[3].passage_id
+
+
+@pytest.mark.anyio
+async def test_the_query_parameter_beats_the_cookie(page_client: httpx.AsyncClient) -> None:
+    """`?level=` is the test escape hatch: it renders that level regardless of
+    progress, and it does not write the cookie."""
+    r = await page_client.get("/", params={"level": "2"}, headers={"Cookie": "launder_level=5"})
+    assert _boot_of(r.text)["level_n"] == 2
+    assert "set-cookie" not in r.headers
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("value", ["0", "-3", "999", "banana", "", "2.5"])
+async def test_an_unusable_level_falls_back_to_one(
+    page_client: httpx.AsyncClient, value: str
+) -> None:
+    """Not clamped into range: a typo'd `?level=150` rendering level 15 would
+    make a test meaning "that level does not exist" pass against the wrong
+    page."""
+    assert _boot_of((await page_client.get("/", params={"level": value})).text)["level_n"] == 1
+    cookied = await page_client.get("/", headers={"Cookie": f"launder_level={value}"})
+    assert _boot_of(cookied.text)["level_n"] == 1
+
+
+@pytest.mark.anyio
+async def test_the_page_is_private_and_varies_on_the_cookie(
+    page_client: httpx.AsyncClient,
+) -> None:
+    """A shared cache handing one player's level to the next visitor would drop
+    them into somebody else's campaign, and a cache keyed on the URL alone would
+    serve level 1 to everyone who arrived after the first visitor."""
+    r = await page_client.get("/")
+    assert r.headers["cache-control"] == "private, no-cache"
+    assert r.headers["vary"] == "Cookie, Accept-Encoding"

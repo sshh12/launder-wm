@@ -29,9 +29,9 @@ from launder_serve.judge.protocol import JudgeError, JudgeUsage, Observation
 __all__ = ["OpenAIJudge"]
 
 _DEFAULT_BASE_URL: Final[str] = "https://api.openai.com/v1"
-#: Statuses worth one retry then failover. Everything else fails over at once —
-#: a 400 will be a 400 again, and burning the retry budget on it costs latency
-#: the player pays for.
+#: Statuses worth the one retry `CachingJudge` allows. Everything else gives up
+#: at once and the submission clears provisionally — a 400 will be a 400 again,
+#: and burning the retry on it costs latency the player pays for.
 _RETRYABLE: Final[frozenset[int]] = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
 
 

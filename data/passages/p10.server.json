@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p10",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Railway signalling exists to move trains safely and efficiently, preventing collisions and maintaining consistent speeds.",
+      "label": "preventing collisions",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Signals, the coloured lights and indicators positioned along the track, tell the train driver whether movement is permitted.",
+      "label": "the trackside signals",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "The signals are controlled by a signalling centre that monitors train locations, speeds, and routes in real time.",
+      "label": "the signalling centre",
+      "required": false
+    },
+    {
+      "id": "c4",
+      "text": "Green means the track ahead is clear, yellow warns of a potential hazard and calls for reduced speed, and red requires an immediate stop.",
+      "label": "the green, yellow and red code",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Semaphore signals, which use movable arms, historically gave more detailed instruction, indicating specific speeds and distances.",
+      "label": "the semaphore arms",
+      "required": false
+    },
+    {
+      "id": "c6",
+      "text": "Automatic Train Protection automatically applies the brakes if the driver fails to respond appropriately to a signal.",
+      "label": "Automatic Train Protection",
+      "required": true
+    },
+    {
+      "id": "c7",
+      "text": "Signallers continuously adjust the system in response to train movements, track maintenance, and other operational factors.",
+      "label": "the signallers' adjustments",
+      "required": false
+    }
+  ],
+  "par": 4
+}

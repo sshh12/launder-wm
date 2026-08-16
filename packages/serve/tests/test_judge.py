@@ -2,25 +2,35 @@
 
 Verdict derivation is `launder_core.gates.checks.llm_gate.derive_verdict` and is
 core's to test. What is tested here is everything core deliberately refuses to
-know about — the exact prompt bytes, the two wire schemas, the fake and cassette
-providers, and the cache/limiter/spend/failover ladder that sits between "check
-8 ran" and "a model was actually asked".
+know about — the exact prompt bytes, the wire schema, the fake and cassette
+providers, and the cache/limiter/spend/retry ladder that sits between "check 8
+ran" and "a model was actually asked".
 """
 
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+from pydantic import SecretStr, ValidationError
 
 from launder_core.schemas import Claim, PassagePublic
-from launder_serve.judge.anthropic import anthropic_schema
+from launder_serve.content import Content
+from launder_serve.judge import assert_prompt_hash, build_provider, resolve_prompt_hash
 from launder_serve.judge.cassette import CassetteJudge, JudgeMiss, cassette_key
 from launder_serve.judge.fake import FakeJudge
-from launder_serve.judge.gate import RATE_LIMITED, REQUEST_CLIENT_KEY, CachingJudge
+from launder_serve.judge.gate import (
+    EST_USD_PER_CALL,
+    RATE_LIMITED,
+    REQUEST_CLIENT_KEY,
+    CachingJudge,
+)
+from launder_serve.judge.openai import OpenAIJudge
 from launder_serve.judge.prompt import (
     OBSERVATION_SCHEMA,
     SYSTEM_PROMPT,
@@ -33,6 +43,7 @@ from launder_serve.judge.prompt import (
 from launder_serve.judge.protocol import ClaimObservation, JudgeError, Observation
 from launder_serve.limits import TokenBucketLimiter
 from launder_serve.repo.memory import MemoryJudgeCacheRepo, MemorySpendRepo
+from launder_serve.settings import PAID_PROVIDERS, Settings
 
 
 def _obs(**overrides: Any) -> Observation:
@@ -70,6 +81,22 @@ def test_prompt_hash_covers_prompt_schema_model_and_effort() -> None:
     # A model swap or an effort change must invalidate the cache namespace.
     assert base != compute_prompt_hash(model_id="m-2", reasoning_effort="none")
     assert base != compute_prompt_hash(model_id="m-1", reasoning_effort="low")
+
+
+def test_the_shipped_judge_toml_records_the_hash_this_build_computes(
+    content: Content, settings: Settings
+) -> None:
+    """The boot assertion, run against the REAL `data/config/judge.toml`.
+
+    `prompt_hash` covers the system prompt, the schema, the model id and the
+    reasoning effort, so pinning a new model without recording the new hash is a
+    boot failure — and this test is the same failure one commit earlier, where it
+    costs a red CI run instead of a production deploy that will not start.
+    """
+    assert content.judge.provider == "openai"
+    assert content.judge.model == "gpt-5.6-terra"
+    assert content.judge.prompt_hash == resolve_prompt_hash(content, settings)
+    assert assert_prompt_hash(content, settings) == []
 
 
 def test_the_user_message_is_a_nonce_sandwich(public_passage: PassagePublic) -> None:
@@ -191,17 +218,56 @@ def test_the_schema_matches_the_observation_core_will_validate() -> None:
     assert set(OBSERVATION_SCHEMA["properties"]) == set(Observation.model_fields)
 
 
-def test_the_anthropic_schema_is_equivalent_not_identical() -> None:
-    """§7.5 asks the failover leg for an EQUIVALENT schema, not the same bytes."""
-    converted = anthropic_schema(OBSERVATION_SCHEMA)
-    kind = converted["properties"]["unnatural_kind"]
-    # Anthropic's supported subset has anyOf but not a list-valued `type`.
-    assert "type" not in kind
-    branches = kind["anyOf"]
-    assert {"type": "null"} in branches
-    assert any(b.get("type") == "string" and None not in b.get("enum", []) for b in branches)
-    assert converted["additionalProperties"] is False
-    assert converted["properties"]["claims"]["items"]["additionalProperties"] is False
+# ---------------------------------------------------------------------------
+# providers: exactly one, and it is OpenAI
+# ---------------------------------------------------------------------------
+
+
+def test_there_is_exactly_one_paid_provider() -> None:
+    """No failover leg, no second vendor, no second key to seal.
+
+    The policy is one provider, one retry, then fail open provisional. A second
+    paid provider would mean a second SDK, a second prompt shape to keep
+    equivalent, and two vendors' verdicts sharing one cache namespace — for a
+    gate whose hard cases are already caught deterministically before it runs.
+    """
+    assert set(PAID_PROVIDERS) == {"openai"}
+
+
+def test_an_unknown_provider_is_refused_at_settings_time() -> None:
+    with pytest.raises(ValidationError):
+        Settings(judge_provider="anthropic")  # type: ignore[arg-type]
+
+
+async def test_build_provider_returns_one_provider_not_a_chain(
+    content: Content, settings: Settings
+) -> None:
+    """`build_provider` returns THE provider, never a `(primary, failover)` pair.
+
+    There is no second vendor to fall through to, so a chain would be a name
+    bound to something nothing ever calls.
+    """
+    assert isinstance(build_provider(content, settings), FakeJudge)
+
+    paid = settings.model_copy(
+        update={"judge_provider": "openai", "openai_api_key": SecretStr("sk-test")}
+    )
+    async with httpx.AsyncClient() as http:
+        provider = build_provider(content, paid, http=http)
+    assert isinstance(provider, OpenAIJudge)
+    assert provider.model == "gpt-5.6-terra"
+
+
+def test_importing_the_judge_package_pulls_in_no_vendor_sdk() -> None:
+    """The provider talks raw REST over the shared `httpx` client.
+
+    An SDK import here would be a second, unpinned definition of the wire shape
+    and would land in the Railway image for a process that may only ever run the
+    fake provider.
+    """
+    import launder_serve.judge  # noqa: F401
+
+    assert "anthropic" not in sys.modules
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +331,7 @@ async def test_the_cassette_replays_a_hit(tmp_path: Path, public_passage: Passag
 
 
 # ---------------------------------------------------------------------------
-# CachingJudge: cache, failover, spend cap, rate limit
+# CachingJudge: cache, retry, spend cap, rate limit
 # ---------------------------------------------------------------------------
 
 
@@ -284,7 +350,7 @@ class FlakyJudge:
         return _obs()
 
 
-def _gate(provider: Any, failover: Any = None, **kwargs: Any) -> CachingJudge:
+def _gate(provider: Any, **kwargs: Any) -> CachingJudge:
     defaults: dict[str, Any] = {
         "cache": MemoryJudgeCacheRepo(),
         "spend": MemorySpendRepo(),
@@ -294,7 +360,7 @@ def _gate(provider: Any, failover: Any = None, **kwargs: Any) -> CachingJudge:
         "scoring_version": "sc1",
     }
     defaults.update(kwargs)
-    return CachingJudge(provider=provider, failover=failover, **defaults)
+    return CachingJudge(provider=provider, **defaults)
 
 
 async def _observe(gate: CachingJudge, passage: PassagePublic, text: str) -> Observation:
@@ -320,35 +386,41 @@ async def test_the_repo_cache_survives_an_lru_eviction(public_passage: PassagePu
     assert gate.stats["repo_hits"] == 1
 
 
-async def test_one_retry_then_failover_never_both_providers_every_time(
+async def test_a_retryable_failure_is_retried_exactly_once(
     public_passage: PassagePublic,
 ) -> None:
-    primary = FlakyJudge()
-    failover = FakeJudge()
-    gate = _gate(primary, failover, max_retries=1)
+    """ONE provider, ONE retry. There is no second vendor to fall through to."""
+    provider = FlakyJudge(fail_times=1)
+    gate = _gate(provider, max_retries=1)
     await _observe(gate, public_passage, "a clean rewrite")
-    assert primary.calls == 2  # the attempt plus ONE retry
-    assert failover.calls == 1
-    assert gate.stats["failovers"] == 1
+    assert provider.calls == 2  # the attempt plus ONE retry, and it succeeded
+    assert gate.stats["calls"] == 2
 
 
-async def test_a_non_retryable_error_fails_over_immediately(
+async def test_a_non_retryable_error_does_not_burn_the_retry(
     public_passage: PassagePublic,
 ) -> None:
-    primary = FlakyJudge(retryable=False)
-    failover = FakeJudge()
-    gate = _gate(primary, failover, max_retries=1)
-    await _observe(gate, public_passage, "a clean rewrite")
-    assert primary.calls == 1  # a 400 will be a 400 again; do not burn the retry
-
-
-async def test_after_retry_and_failover_the_provider_raises(
-    public_passage: PassagePublic,
-) -> None:
-    """Core catches this and clears provisionally; nothing is cached."""
-    gate = _gate(FlakyJudge(), FlakyJudge(), max_retries=1)
+    provider = FlakyJudge(retryable=False)
+    gate = _gate(provider, max_retries=1)
     with pytest.raises(JudgeError):
         await _observe(gate, public_passage, "a clean rewrite")
+    assert provider.calls == 1  # a 400 will be a 400 again; the retry costs latency
+
+
+async def test_after_the_retry_the_provider_raises_and_nothing_is_cached(
+    public_passage: PassagePublic,
+) -> None:
+    """The whole fail-open path: core catches this and clears provisionally.
+
+    Nothing is written to the cache, because a provisional clear must never
+    become permanent — the next submission of the same text has to ask again.
+    """
+    provider = FlakyJudge()
+    gate = _gate(provider, max_retries=1)
+    with pytest.raises(JudgeError):
+        await _observe(gate, public_passage, "a clean rewrite")
+    assert provider.calls == 2
+    assert gate.stats["errors"] == 1
     assert await gate.cache.get(gate.key_for(public_passage, "a clean rewrite")) is None
 
 
@@ -359,6 +431,36 @@ async def test_the_spend_cap_refuses_before_the_call(public_passage: PassagePubl
         await _observe(gate, public_passage, "a clean rewrite")
     assert judge.calls == 0
     assert gate.stats["spend_refused"] == 1
+
+
+async def test_the_per_call_estimate_is_what_the_ledger_reserves(
+    public_passage: PassagePublic,
+) -> None:
+    """The ledger reserves BEFORE the call and never reconciles, so this number
+    is the only thing making the dollar cap mean dollars.
+
+    It is a setting rather than a constant because the price it is derived from
+    is an assumption: if the real bill and the ledger diverge, `JUDGE_EST_USD_PER_CALL`
+    is the fix, not a redeploy.
+    """
+    spend = MemorySpendRepo()
+    gate = _gate(FakeJudge(), spend=spend, est_usd_per_call=0.25, daily_usd_cap=0.4)
+    await _observe(gate, public_passage, "the first rewrite")
+    # 0.25 reserved, 0.4 authorised: the second call cannot fit and is refused
+    # before the provider is asked, not after the money is spent.
+    with pytest.raises(JudgeError, match="spend cap"):
+        await _observe(gate, public_passage, "the second rewrite")
+    assert gate.stats["calls"] == 1
+
+
+def test_the_estimate_default_has_one_definition() -> None:
+    """`EST_USD_PER_CALL` is the source of the setting's default and nothing else.
+
+    Two copies of this number would drift, and the one that drifted would be the
+    one the ledger actually used.
+    """
+    assert Settings.model_fields["judge_est_usd_per_call"].default == EST_USD_PER_CALL
+    assert _gate(FakeJudge()).est_usd_per_call == EST_USD_PER_CALL
 
 
 async def test_the_rate_limiter_only_sees_misses(public_passage: PassagePublic) -> None:

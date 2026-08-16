@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p11",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Air traffic controllers manage the movement of thousands of flights every day, balancing safety, efficiency and capacity.",
+      "label": "controllers managing thousands of daily flights",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "The system relies heavily on radar technology, which tracks aircraft positions and speeds in real time.",
+      "label": "radar's real-time tracking",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "Sophisticated computer systems predict potential conflicts and generate flight plans.",
+      "label": "computers predicting conflicts",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "A flight plan, drafted by pilots and controllers, sets out the route, altitude, speed and headings an aircraft will follow.",
+      "label": "the contents of a flight plan",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Ground controllers, working in specialized centers, guide aircraft from the runway to take-off and keep departing planes separated.",
+      "label": "ground controllers at take-off",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Once airborne, an aircraft passes to en route air traffic control, where controllers monitor its progress and adjust its path.",
+      "label": "the en route hand-off",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Delays, weather conditions and airspace restrictions force controllers to reroute and prioritize flights.",
+      "label": "reroutes for weather and delays",
+      "required": false
+    }
+  ],
+  "par": 4
+}

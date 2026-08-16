@@ -1,4 +1,4 @@
-# .github/workflows/ci.yml — TECH_PLAN.md §11.6
+# .github/workflows/ci.yml — .build-docs/TECH_PLAN.md §11.6
 #
 # Three jobs: python | web | docker. Railway autodeploys with "Wait for CI", so
 # the deployment sits in WAITING until these finish and becomes SKIPPED if any
@@ -279,11 +279,13 @@ jobs:
       #
       # WHY THE CEILING IS NOT §2.3's 250 MB. The image is ~374 MB and the floor
       # is: numpy 71 (43 + 28 numpy.libs), the venv's precompiled bytecode 43,
-      # python itself 37, sqlalchemy 23, openai 20, psycopg[binary] 19, uvloop
-      # 16, anthropic 13, hf_xet 12, tokenizers 11, huggingface_hub 7, plus the
-      # Debian slim base. Every one of those is load-bearing: core needs numpy,
-      # the server detector needs tokenizers, the judge needs both SDKs, and
-      # Railway needs psycopg. Two stage-3 changes already took 76 MB out (the
+      # python itself 37, sqlalchemy 23, psycopg[binary] 19, uvloop 16, hf_xet
+      # 12, tokenizers 11, huggingface_hub 7, plus the Debian slim base. Every
+      # one of those is load-bearing: core needs numpy, the server detector
+      # needs tokenizers, and Railway needs psycopg. No vendor SDK is in that
+      # list any more — the judge speaks raw REST over httpx, which is why
+      # dropping the openai (20 MB) and anthropic (13 MB) packages cost nothing
+      # but image size. Two stage-3 changes already took 76 MB out (the
       # runtime no longer ships the 52.5 MB uv binary it never invoked, and the
       # workspace install moved into the deps stage). Getting under 250 MB needs
       # a decision §2.3 has not made — dropping uvloop, switching to

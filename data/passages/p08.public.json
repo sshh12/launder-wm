@@ -1,0 +1,70 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p08",
+  "level_id": "L2",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Glacier monitoring is a complex and ongoing process vital for understanding the impacts of climate change and predicting future environmental shifts. Scientists employ a variety of techniques to track the movement, volume, and composition of these massive ice formations. Traditionally, this involved painstaking measurements of surface elevation changes using surveying equipment like theodolites and total stations, meticulously recording shifts in ice front positions over extended periods. However, modern monitoring relies increasingly on remote sensing technologies. Satellite imagery, particularly radar and laser altimetry, allows for the creation of detailed digital elevation models, revealing subtle changes in ice thickness and surface slope with remarkable precision and covering vast areas. Ground-based GPS stations are also crucial, providing highly accurate data on ice velocity and deformation, often deployed on the glacier surface or within crevasses to capture movement beneath the ice. Furthermore, scientists analyze ice cores – cylindrical samples drilled from the glacier – to reconstruct past climate conditions and isotopic ratios, offering valuable context for current changes. Monitoring also includes assessing meltwater runoff, using gauging stations to measure streamflow and analyzing the water’s chemical composition to understand the processes shaping the surrounding landscape. The data collected from these diverse methods are integrated to create comprehensive glacier inventories and models, ultimately informing our understanding of glacial dynamics and their role in global sea-level rise.",
+  "n_words": 220,
+  "detector": {
+    "expected_n_scored": 252,
+    "expected_score": 0.5207543414439967,
+    "expected_z": 3.5375099247717445,
+    "g_digest": "blake3:3d4d9cc097733addd149df6e706ae76eabf0cad6689bf39ab14ba594c26f575c"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Glacier monitoring is vital for understanding the impacts of climate change and predicting future environmental shifts.",
+      "label": "why glaciers are monitored",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Traditional monitoring measured surface elevation changes with surveying equipment such as theodolites and total stations, recording shifts in ice front positions.",
+      "label": "the traditional survey equipment",
+      "required": false
+    },
+    {
+      "id": "c3",
+      "text": "Modern monitoring relies increasingly on remote sensing: satellite radar and laser altimetry build detailed digital elevation models that reveal changes in ice thickness and surface slope.",
+      "label": "the satellite remote sensing",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "Ground-based GPS stations supply highly accurate data on ice velocity and deformation.",
+      "label": "the ground-based GPS stations",
+      "required": false
+    },
+    {
+      "id": "c5",
+      "text": "Ice cores, cylindrical samples drilled from the glacier, are analysed to reconstruct past climate conditions and isotopic ratios.",
+      "label": "the drilled ice cores",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Monitoring also assesses meltwater runoff, using gauging stations to measure streamflow and analysing the water's chemical composition.",
+      "label": "the meltwater runoff measurements",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Data from these different methods are integrated into glacier inventories and models that inform our understanding of glacial dynamics and global sea-level rise.",
+      "label": "the integrated glacier models",
+      "required": true
+    }
+  ],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

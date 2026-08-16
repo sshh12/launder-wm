@@ -24,10 +24,9 @@ from launder_core.schemas import EditOp
 __all__ = [
     "CacheStats",
     "CachedVerdict",
-    "DailyRepo",
-    "DailySlot",
     "JudgeCacheRepo",
     "LeaderRow",
+    "ProgressRepo",
     "SpendRepo",
     "SubmissionRecord",
     "SubmissionRepo",
@@ -43,7 +42,10 @@ class SubmissionRecord:
     `distance` is server-computed and is the only authority.
     """
 
-    day: date
+    #: The campaign position (1..level_count), NOT a date. `level_id` beside it
+    #: is the RULESET (`L1..L6`); the two are independent and both are needed to
+    #: read a row back.
+    level_n: int
     passage_id: str
     level_id: str
     text_hash: str
@@ -108,25 +110,14 @@ class CacheStats:
     by_version: dict[str, int] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class DailySlot:
-    day: date
-    passage_id: str
-    level_id: str
-    created_at: datetime
-    authored_par: int | None = None
-    #: Best clear in the first N plays; self-balancing (§9.1).
-    observed_par: int | None = None
-
-
 class SubmissionRepo(Protocol):
     async def record(self, s: SubmissionRecord) -> None: ...
 
-    async def best_for_day(self, day: date, level_id: str, limit: int) -> list[LeaderRow]: ...
+    async def best_for_level(self, level_n: int, limit: int) -> list[LeaderRow]: ...
 
-    async def rank_of(self, day: date, level_id: str, distance: int) -> int: ...
+    async def rank_of(self, level_n: int, distance: int) -> int: ...
 
-    async def count_for_day(self, day: date) -> int: ...
+    async def count_for_level(self, level_n: int) -> int: ...
 
 
 class JudgeCacheRepo(Protocol):
@@ -150,7 +141,23 @@ class SpendRepo(Protocol):
         ...
 
 
-class DailyRepo(Protocol):
-    async def for_date(self, d: date) -> DailySlot | None: ...
+class ProgressRepo(Protocol):
+    """Campaign progress for one anonymous localStorage session.
 
-    async def set_observed_par(self, day: date, level_id: str, par: int) -> None: ...
+    `session_id` is NOT identity: it is a uuid the browser minted for itself,
+    it is never linked to anything, and losing it costs the player nothing they
+    cannot re-clear. It exists so progress survives a second device and a
+    cleared cache, which localStorage alone cannot do.
+    """
+
+    async def record(self, session_id: str, level_n: int, distance: int) -> None:
+        """Upsert. The LOWER distance wins — a level is cleared once, at a best.
+
+        Replaying a cleared level with a sloppier solve must never make the
+        player's record worse than what they already achieved.
+        """
+        ...
+
+    async def cleared_levels(self, session_id: str) -> list[int]:
+        """Ascending. `unlocked` is derived from `max(...) + 1` by the caller."""
+        ...

@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p13",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "A ferry schedule is governed by a delicate balance of passenger demand, route characteristics and operational constraints.",
+      "label": "the balance behind a schedule",
+      "required": false
+    },
+    {
+      "id": "c2",
+      "text": "Building a schedule starts by analysing passenger traffic patterns drawn from historical data, seasonal trends and anticipated events such as holidays or festivals.",
+      "label": "passenger traffic analysis",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "That analysis determines how often a ferry runs and how large a vessel is needed for the expected passengers and vehicles.",
+      "label": "service frequency and vessel size",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "Shallow waters, narrow channels or prevailing winds can dictate slower speeds and force reduced service intervals.",
+      "label": "shallow water and narrow channels",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Ferry companies must also allow for loading and unloading time, terminal turnaround time and delays caused by weather.",
+      "label": "loading and turnaround time",
+      "required": false
+    },
+    {
+      "id": "c6",
+      "text": "Operators track weather forecasts, vessel locations and passenger boarding numbers with monitoring systems that use predictive algorithms to anticipate bottlenecks and adjust schedules.",
+      "label": "real-time monitoring and prediction",
+      "required": true
+    },
+    {
+      "id": "c7",
+      "text": "Strong storms or high tides can compel a temporary suspension of service for safety reasons.",
+      "label": "suspending service in storms",
+      "required": true
+    }
+  ],
+  "par": 4
+}

@@ -48,7 +48,7 @@ def _toml(rel: str) -> dict[str, Any]:
 def public_passage() -> dict[str, Any]:
     return {
         "schema": "launder.passage.public/1",
-        "id": "p_2026-09-01",
+        "id": "p07",
         "level_id": "L2",
         "wm_config_id": SynthIDConfig().wm_config_id,
         "asset_bundle_id": "ab1:" + "44de" * 16,
@@ -134,7 +134,7 @@ def test_locked_phrase_must_appear_in_the_text(public_passage: dict[str, Any]) -
 
 def _submit() -> dict[str, Any]:
     return {
-        "passage_id": "p_2026-09-01",
+        "passage_id": "p07",
         "level_id": "L2",
         "text": "rewritten text",
         "client": {"detector": "local", "elapsed_ms": 184320},
@@ -289,7 +289,9 @@ def test_copy_toml_covers_every_check_used_by_levels() -> None:
 def test_copy_never_claims_the_detector_identifies_a_human() -> None:
     """§10.7 rule 2: absence of a watermark does not prove a human wrote it."""
     readout = _toml("config/copy.toml")["readout"]
-    assert readout["above"] == "AI detected"
+    # "AI WATERMARK detected" — the strongest true claim: the detector found the
+    # watermark, which is not the same as recognising AI writing.
+    assert readout["above"] == "AI watermark detected"
     assert readout["below"] == "Not detected"
     assert "human" not in json.dumps(readout).lower()
     assert "%" not in readout["above"] + readout["below"]

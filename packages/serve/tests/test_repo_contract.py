@@ -23,7 +23,7 @@ skip from being how the gate passes in CI.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -32,23 +32,38 @@ import pytest
 
 from launder_core.schemas import EditOp
 from launder_serve.repo.memory import (
-    MemoryDailyRepo,
     MemoryJudgeCacheRepo,
+    MemoryProgressRepo,
     MemorySpendRepo,
     MemorySubmissionRepo,
 )
-from launder_serve.repo.protocol import CachedVerdict, DailySlot, SubmissionRecord
+from launder_serve.repo.protocol import CachedVerdict, SubmissionRecord
 
+#: The BILLING day of the spend ledger — the one date left in the schema.
 DAY = date(2026, 9, 1)
 NOW = datetime(2026, 9, 1, 6, 11, 2, tzinfo=UTC)
+LEVEL = 7
 
 
 class Repos:
-    def __init__(self, submissions: Any, cache: Any, spend: Any, dailies: Any, kind: str) -> None:
+    def __init__(
+        self,
+        submissions: Any,
+        cache: Any,
+        spend: Any,
+        progress: Any,
+        best_distance: Callable[[str, int], Awaitable[int | None]],
+        kind: str,
+    ) -> None:
         self.submissions = submissions
         self.cache = cache
         self.spend = spend
-        self.dailies = dailies
+        self.progress = progress
+        #: `ProgressRepo` deliberately has no reader for the stored distance —
+        #: nothing in the product needs one. The FIXTURE supplies it per
+        #: implementation so the tests below can pin the lower-distance-wins
+        #: upsert without ever asking which engine they are talking to.
+        self.best_distance = best_distance
         self.kind = kind
 
 
@@ -70,21 +85,46 @@ def postgres_url() -> str:
     return os.environ.get(TEST_POSTGRES_URL, "").strip()
 
 
+def _memory_best_distance(repo: MemoryProgressRepo) -> Callable[[str, int], Awaitable[int | None]]:
+    async def read(session_id: str, level_n: int) -> int | None:
+        return repo._best.get((session_id, level_n))
+
+    return read
+
+
+def _sql_best_distance(engine: Any) -> Callable[[str, int], Awaitable[int | None]]:
+    import sqlalchemy as sa
+
+    from launder_serve.repo.models import progress
+
+    async def read(session_id: str, level_n: int) -> int | None:
+        stmt = sa.select(progress.c.distance).where(
+            progress.c.session_id == session_id, progress.c.level_n == level_n
+        )
+        async with engine.connect() as conn:
+            value = (await conn.execute(stmt)).scalar_one_or_none()
+        return None if value is None else int(value)
+
+    return read
+
+
 @pytest.fixture(params=["memory", "sqlite", "postgres"])
 async def repo(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[Repos]:
     if request.param == "memory":
+        progress = MemoryProgressRepo()
         yield Repos(
             MemorySubmissionRepo(),
             MemoryJudgeCacheRepo(),
             MemorySpendRepo(),
-            MemoryDailyRepo(),
+            progress,
+            _memory_best_distance(progress),
             "memory",
         )
         return
 
     from launder_serve.repo.sqlalchemy import (
-        SqlDailyRepo,
         SqlJudgeCacheRepo,
+        SqlProgressRepo,
         SqlSpendRepo,
         SqlSubmissionRepo,
         create_all,
@@ -107,7 +147,8 @@ async def repo(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[
                 SqlSubmissionRepo(engine),
                 SqlJudgeCacheRepo(engine),
                 SqlSpendRepo(engine),
-                SqlDailyRepo(engine),
+                SqlProgressRepo(engine),
+                _sql_best_distance(engine),
                 "postgres",
             )
         finally:
@@ -122,7 +163,8 @@ async def repo(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[
             SqlSubmissionRepo(engine),
             SqlJudgeCacheRepo(engine),
             SqlSpendRepo(engine),
-            SqlDailyRepo(engine),
+            SqlProgressRepo(engine),
+            _sql_best_distance(engine),
             "sqlite",
         )
     finally:
@@ -144,8 +186,8 @@ async def _reset(engine: Any) -> None:
 
 def _record(**overrides: Any) -> SubmissionRecord:
     base: dict[str, Any] = {
-        "day": DAY,
-        "passage_id": "p_2026-09-01",
+        "level_n": LEVEL,
+        "passage_id": "p07",
         "level_id": "L2",
         "text_hash": "a" * 64,
         "text": "a laundered passage",
@@ -172,7 +214,7 @@ def _record(**overrides: Any) -> SubmissionRecord:
 
 async def test_record_then_read_back_the_diff(repo: Repos) -> None:
     await repo.submissions.record(_record())
-    rows = await repo.submissions.best_for_day(DAY, "L2", 10)
+    rows = await repo.submissions.best_for_level(LEVEL, 10)
     assert len(rows) == 1
     assert rows[0].distance == 4
     assert rows[0].elapsed_ms == 184320
@@ -192,7 +234,7 @@ async def test_the_board_is_ordered_by_distance_then_time(repo: Repos) -> None:
         _record(text_hash="b" * 64, distance=3, created_at=NOW + timedelta(minutes=5))
     )
     await repo.submissions.record(_record(text_hash="d" * 64, distance=3))
-    rows = await repo.submissions.best_for_day(DAY, "L2", 10)
+    rows = await repo.submissions.best_for_level(LEVEL, 10)
     assert [r.distance for r in rows] == [3, 3, 7]
     # Equal distance: the earlier submission ranks first.
     assert rows[0].at < rows[1].at
@@ -204,41 +246,57 @@ async def test_only_cleared_non_provisional_rows_reach_the_board(repo: Repos) ->
         _record(text_hash="f" * 64, cleared=True, provisional=True, distance=2)
     )
     await repo.submissions.record(_record(text_hash="g" * 64, distance=9))
-    rows = await repo.submissions.best_for_day(DAY, "L2", 10)
-    # A provisional clear is real for the player and excluded from the board
-    # and the streak (§7.5).
+    rows = await repo.submissions.best_for_level(LEVEL, 10)
+    # A provisional clear is real for the player — the chime plays — but the
+    # judge never answered, so it does not advance the campaign and it is
+    # excluded from the per-level best-distance ranking this method computes
+    # (§7.5).
     assert [r.distance for r in rows] == [9]
 
 
 async def test_limit_is_respected(repo: Repos) -> None:
     for i in range(5):
         await repo.submissions.record(_record(text_hash=str(i) * 64, distance=i + 1))
-    assert len(await repo.submissions.best_for_day(DAY, "L2", 3)) == 3
+    assert len(await repo.submissions.best_for_level(LEVEL, 3)) == 3
 
 
 async def test_rank_of_counts_strictly_better_clears(repo: Repos) -> None:
     for i, d in enumerate((2, 3, 3, 8)):
         await repo.submissions.record(_record(text_hash=str(i) * 64, distance=d))
-    assert await repo.submissions.rank_of(DAY, "L2", 2) == 1
-    assert await repo.submissions.rank_of(DAY, "L2", 3) == 2
-    assert await repo.submissions.rank_of(DAY, "L2", 9) == 5
+    assert await repo.submissions.rank_of(LEVEL, 2) == 1
+    assert await repo.submissions.rank_of(LEVEL, 3) == 2
+    assert await repo.submissions.rank_of(LEVEL, 9) == 5
 
 
 async def test_record_is_an_upsert_on_the_dedup_index(repo: Repos) -> None:
     """A player nudging broken text and resending it must not mint a second row."""
     await repo.submissions.record(_record(distance=9, cleared=False))
     await repo.submissions.record(_record(distance=4, cleared=True))
-    assert await repo.submissions.count_for_day(DAY) == 1
-    rows = await repo.submissions.best_for_day(DAY, "L2", 10)
+    assert await repo.submissions.count_for_level(LEVEL) == 1
+    rows = await repo.submissions.best_for_level(LEVEL, 10)
     assert [r.distance for r in rows] == [4]
 
 
-async def test_days_and_levels_do_not_bleed(repo: Repos) -> None:
+async def test_levels_do_not_bleed_into_each_other(repo: Repos) -> None:
+    """The board is per LEVEL. A clear of level 8 is not a clear of level 7."""
     await repo.submissions.record(_record())
-    await repo.submissions.record(_record(level_id="L1"))
-    await repo.submissions.record(_record(day=DAY + timedelta(days=1)))
-    assert len(await repo.submissions.best_for_day(DAY, "L2", 10)) == 1
-    assert await repo.submissions.count_for_day(DAY) == 2
+    await repo.submissions.record(_record(level_n=LEVEL + 1, distance=1))
+    assert [r.distance for r in await repo.submissions.best_for_level(LEVEL, 10)] == [4]
+    assert await repo.submissions.count_for_level(LEVEL) == 1
+    assert await repo.submissions.count_for_level(LEVEL + 1) == 1
+
+
+async def test_the_dedup_index_is_the_level_and_the_text_only(repo: Repos) -> None:
+    """Identical text on the SAME level is one row whatever ruleset it names.
+
+    The ruleset is a property of how the level is played, not a second identity
+    for the submission: keying dedup on it would let a client re-post the same
+    text under a different `level_id` and mint a second board entry for it.
+    """
+    await repo.submissions.record(_record(distance=9))
+    await repo.submissions.record(_record(level_id="L1", distance=4))
+    assert await repo.submissions.count_for_level(LEVEL) == 1
+    assert [r.distance for r in await repo.submissions.best_for_level(LEVEL, 10)] == [4]
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +307,7 @@ async def test_days_and_levels_do_not_bleed(repo: Repos) -> None:
 def _verdict(**overrides: Any) -> CachedVerdict:
     base: dict[str, Any] = {
         "judge_version": "g3",
-        "passage_id": "p_2026-09-01",
+        "passage_id": "p07",
         "level_id": "L2",
         "cleared": True,
         "observation": {
@@ -329,26 +387,40 @@ async def test_spend_is_per_day(repo: Repos) -> None:
 
 
 # ---------------------------------------------------------------------------
-# daily slots
+# campaign progress
 # ---------------------------------------------------------------------------
 
 
-async def test_daily_slot_observed_par(repo: Repos) -> None:
-    slot = DailySlot(
-        day=DAY, passage_id="p_2026-09-01", level_id="L2", created_at=NOW, authored_par=4
-    )
-    await repo.dailies.upsert(slot)
-    assert (await repo.dailies.for_date(DAY)) is not None
-
-    await repo.dailies.set_observed_par(DAY, "L2", 3)
-    stored = await repo.dailies.for_date(DAY)
-    assert stored is not None
-    assert stored.observed_par == 3
-    assert stored.authored_par == 4
+async def test_cleared_levels_come_back_ascending(repo: Repos) -> None:
+    for level_n in (3, 1, 2):
+        await repo.progress.record("s_one", level_n, 4)
+    # Ascending whatever order they were cleared in: the client unions this into
+    # localStorage and derives `unlocked` from the last element.
+    assert await repo.progress.cleared_levels("s_one") == [1, 2, 3]
 
 
-async def test_daily_slot_missing_day_is_none(repo: Repos) -> None:
-    assert await repo.dailies.for_date(date(2030, 1, 1)) is None
+async def test_an_unknown_session_has_cleared_nothing(repo: Repos) -> None:
+    assert await repo.progress.cleared_levels("s_never_seen") == []
+
+
+async def test_sessions_do_not_bleed(repo: Repos) -> None:
+    await repo.progress.record("s_one", 1, 4)
+    await repo.progress.record("s_two", 5, 4)
+    assert await repo.progress.cleared_levels("s_one") == [1]
+    assert await repo.progress.cleared_levels("s_two") == [5]
+
+
+async def test_recording_a_level_twice_keeps_the_lower_distance(repo: Repos) -> None:
+    """A player coming back to improve a level must not be able to make their
+    own record worse by playing it badly."""
+    await repo.progress.record("s_one", 2, 6)
+    await repo.progress.record("s_one", 2, 4)
+    assert await repo.progress.cleared_levels("s_one") == [2]
+    assert await repo.best_distance("s_one", 2) == 4
+
+    await repo.progress.record("s_one", 2, 9)
+    assert await repo.best_distance("s_one", 2) == 4
+    assert await repo.progress.cleared_levels("s_one") == [2]
 
 
 # ---------------------------------------------------------------------------

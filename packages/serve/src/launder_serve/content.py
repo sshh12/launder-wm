@@ -25,7 +25,6 @@ import json
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -48,10 +47,11 @@ from launder_core.watermark import assert_scoring_eos
 
 __all__ = [
     "DEV_PASSAGE_ID",
+    "CampaignLevel",
     "Content",
-    "DailySlotSpec",
     "JudgeConfig",
-    "ScheduleFile",
+    "LevelSpec",
+    "ProgressionFile",
     "WatermarkFile",
     "error_message",
     "load_content",
@@ -240,9 +240,12 @@ class JudgeCachePolicy(BaseModel):
 class JudgeLimits(BaseModel):
     model_config = ConfigDict(frozen=True, extra="ignore")
 
-    daily_usd_cap: float = 2.0
-    rate_limit_per_hour: int = 10
-    rate_limit_burst: int = 3
+    #: Mirrors `Settings.judge_daily_usd_cap` / `rate_limit_judge_*`. The two
+    #: must not disagree: the file is what a reader consults and the settings
+    #: defaults are what an unset env var produces.
+    daily_usd_cap: float = 500.0
+    rate_limit_per_hour: int = 60
+    rate_limit_burst: int = 10
     #: Railway's DOCUMENTED header. X-Forwarded-For is not in the documented set
     #: (§14.2 item 6).
     rate_limit_header: str = "X-Real-IP"
@@ -269,15 +272,15 @@ class JudgeConfig(BaseModel):
     prompt_id: str = "judge.observe.v3"
 
     provider: str = "openai"
-    failover_provider: str = "anthropic"
     model: str = ""
-    failover_model: str = ""
     reasoning_effort: str = "none"
     temperature: float = 0.0
     max_output_tokens: int = 300
     timeout_s: float = 6.0
+    #: Retries against THE provider. There is no second provider to fall through
+    #: to: after the retry the judge raises and the submission clears
+    #: provisionally.
     max_retries: int = 1
-    shadow_sample_rate: float = 0.0
 
     prompt_hash: str = ""
     prompt_hash_enforced: bool = True
@@ -298,80 +301,63 @@ class JudgeConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# schedule.toml
+# progression.toml
 # ---------------------------------------------------------------------------
 
 
-class DailySlotSpec(BaseModel):
+class LevelSpec(BaseModel):
+    """One `[[level]]` block: campaign position -> passage -> ruleset."""
+
     model_config = ConfigDict(frozen=True, extra="ignore")
 
-    date: date
+    n: int = Field(ge=1)
     passage_id: str
-    level_id: str
-    notes: str = ""
+    #: An `L1..L6` id from `levels.toml`. The player never sees this string; it
+    #: names the ordered CHECK LIST the level is played under.
+    rules: str
 
 
-class IntroSlot(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="ignore")
+class ProgressionFile(BaseModel):
+    """`data/config/progression.toml`: the campaign, in order, 1..N.
 
-    passage_id: str = "p_intro"
-    level_id: str = "L1"
+    The game is a linear campaign, not a daily: there is no date arithmetic
+    here, nothing rolls over at UTC midnight, and the only ordering is `n`.
 
-
-class ScheduleFile(BaseModel):
-    """`data/config/schedule.toml`: date -> passage_id -> level_id.
-
-    DAILY ROLLOVER IS UTC MIDNIGHT (§9.8). `strict = false` means a scheduled
-    day whose passage file is missing is SKIPPED WITH A BOOT WARNING rather
-    than crashing the server — the static game is playable without /api/daily.
+    `strict = true` means a level whose passage file is missing, or whose
+    `rules` id `levels.toml` does not define, is a BOOT FAILURE. A hole in the
+    campaign is a broken build — level 7 cannot "skip to tomorrow", it just
+    dead-ends the player halfway through, which is worse than not booting.
     """
 
     model_config = ConfigDict(frozen=True, extra="ignore", populate_by_name=True)
 
-    schema_id: str = Field(default="launder.schedule/1", alias="schema")
-    epoch: date
-    first_number: int = 1
-    strict: bool = False
-    intro: IntroSlot = IntroSlot()
-    days: tuple[DailySlotSpec, ...] = Field(default=(), alias="day")
+    schema_id: str = Field(default="launder.progression/1", alias="schema")
+    strict: bool = True
+    levels: tuple[LevelSpec, ...] = Field(default=(), alias="level")
 
     @model_validator(mode="after")
-    def _days_are_on_or_after_the_epoch(self) -> ScheduleFile:
-        """A day before `epoch` yields `puzzle_number <= 0`.
+    def _n_is_contiguous_from_one(self) -> ProgressionFile:
+        """`n` must be exactly 1, 2, ... len(levels), in that order.
 
-        `DailyResponse.puzzle_number` is `ge=1`, so such a day is a 500 the
-        first time somebody plays it — a boot-clean server that breaks at play
-        time on a date nobody tested. This repo's rule is the other way round
-        (§10.7): fail at boot, naming the file and the fix.
+        `level_n` is the player's position AND the wire/DB key for progress, so
+        a gap or a duplicate is not a cosmetic problem: "level 8 of 15" would
+        name a level nobody can reach, and `unlocked = max(cleared) + 1` would
+        point at a hole and strand the player there forever.
         """
-        bad = [slot for slot in self.days if (slot.date - self.epoch).days + self.first_number < 1]
-        if bad:
+        got = [spec.n for spec in self.levels]
+        want = list(range(1, len(self.levels) + 1))
+        if got != want:
             raise ValueError(
-                "schedule.toml schedules "
-                + ", ".join(f"{s.date.isoformat()} ({s.passage_id})" for s in bad)
-                + f" before its own epoch {self.epoch.isoformat()} (first_number="
-                f"{self.first_number}), which gives a puzzle number below 1. Move the "
-                "day, or move the epoch back — but note that moving the epoch "
-                "renumbers every share string ever posted."
+                f"progression.toml numbers its levels {got}, which is not the contiguous "
+                f"run {want}. Renumber the `[[level]]` blocks so `n` runs 1..{len(want)} "
+                "in file order: `level_n` is what the player sees, what the cookie "
+                "carries and what the progress table is keyed on."
             )
         return self
 
     @classmethod
-    def load(cls, path: Path) -> ScheduleFile:
+    def load(cls, path: Path) -> ProgressionFile:
         return cls.model_validate(_read_toml(path))
-
-    def puzzle_number(self, day: date) -> int:
-        """`(day - epoch).days + first_number` — a pure function of the date.
-
-        Fixed so the share string never drifts if a day is inserted or removed.
-        """
-        return (day - self.epoch).days + self.first_number
-
-    def for_date(self, day: date) -> DailySlotSpec | None:
-        for slot in self.days:
-            if slot.date == day:
-                return slot
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -430,8 +416,7 @@ class PassageBundle:
 
 
 #: The id the dev bundle is registered under. `web/index.html`'s checked-in
-#: fixture names it, `schedule.toml`'s `[intro]` names it, and `boot.py` marks a
-#: page built from it `dev: true`.
+#: fixture names it, and `boot.py` marks a page built from it `dev: true`.
 DEV_PASSAGE_ID: Final[str] = "p_dev"
 
 
@@ -451,16 +436,16 @@ def _dev_bundle(
     nothing to render, `/api/detect` 404s on every keystroke and the needle never
     moves — which is exactly the state an audit found the shipped page in.
 
-    What this is NOT: a daily. It is not scheduled, it is marked `dev: true` in
-    the boot payload, and it is refused outright in production. The fixture is
-    HUMAN PROSE reading z = 1.31 against a notch of 2.3263, i.e. it starts
-    already under the line — a coherent thing to develop against and not a
-    puzzle, which is why publishing it as a daily would be a lie rather than a
-    shortcut.
+    What this is NOT: a level of the campaign. It stands in for the WHOLE
+    campaign — "level 1 of 1" — it is marked `dev: true` in the boot payload,
+    and it is refused outright in production. The fixture is HUMAN PROSE
+    reading z = 1.31 against a notch of 2.3263, i.e. it starts already under
+    the line — a coherent thing to develop against and not a puzzle, which is
+    why shipping it as a real level would be a lie rather than a shortcut.
 
     The four detector expectations are COMPUTED here by the same core the server
-    scores with, never authored. `forge publish` is the supported path for a real
-    passage.
+    scores with, never authored. A real level is `forge pack` plus a `[[level]]`
+    block in `data/config/progression.toml`.
     """
     fixture = data_root / "dev" / "passage.txt"
     if not fixture.is_file():
@@ -519,7 +504,7 @@ def _load_passages(
     bundles: dict[str, PassageBundle] = {}
     warnings: list[str] = []
     if not passages_dir.is_dir():
-        return bundles, [f"{passages_dir} does not exist: no dailies will be served."]
+        return bundles, [f"{passages_dir} does not exist: the campaign has no passages."]
     for public_path in sorted(passages_dir.glob("*.public.json")):
         raw = json.loads(public_path.read_text(encoding="utf-8"))
         public = PassagePublic.model_validate(raw)
@@ -598,20 +583,42 @@ def _resolve_asset_bundle_id(
 
 
 @dataclass(frozen=True)
+class CampaignLevel:
+    """One playable position in the campaign, with its passage already resolved.
+
+    `level_id` is the RULESET id (`L1..L6`) rather than the `LevelConfig`
+    itself, because `main._drop_unserviceable_levels` rebuilds `Content.levels`
+    after this tuple is built — a cached `LevelConfig` here would be a second
+    copy of a level the app has since refused to serve.
+    """
+
+    n: int
+    passage_id: str
+    level_id: str
+
+
+@dataclass(frozen=True)
 class Content:
     data_root: Path
     watermark: WatermarkFile
     #: Merged with `[defaults.*]` and validated against the REGISTRY by core's
     #: `load_levels`, which raises at BOOT on an unknown check name, a check out
-    #: of phase order, or a param nobody reads.
+    #: of phase order, or a param nobody reads. Keyed by RULESET id (`L1..L6`).
     levels: dict[str, LevelConfig]
     levels_file: LevelsFile
     scoring: ScoringConfig
     judge: JudgeConfig
-    schedule: ScheduleFile
+    progression: ProgressionFile
+    #: The campaign as it can actually be played: `campaign[i].n == i + 1`, and
+    #: every entry's passage is loaded. `progression.levels` is the FILE;
+    #: this is the file after the passages were checked against it.
+    campaign: tuple[CampaignLevel, ...]
     copy: CopyBook
     passages: dict[str, PassageBundle]
     asset_bundle_id: str
+    #: True when `campaign` is the single-level dev fixture rather than the real
+    #: campaign. `boot.py` puts it on the wire as `dev`.
+    dev: bool = False
     warnings: tuple[str, ...] = ()
 
     @property
@@ -626,11 +633,45 @@ class Content:
     def judge_version(self) -> str:
         return self.judge.judge_version
 
-    def level(self, level_id: str) -> LevelConfig | None:
+    @property
+    def level_count(self) -> int:
+        """The number the player is shown next to their level ("3 of 15")."""
+        return len(self.campaign)
+
+    def ruleset(self, level_id: str) -> LevelConfig | None:
+        """The ordered check list `L1..L6` names. NOT a campaign position."""
         return self.levels.get(level_id)
 
     def passage(self, passage_id: str) -> PassageBundle | None:
         return self.passages.get(passage_id)
+
+    def campaign_level(self, n: int) -> CampaignLevel | None:
+        if 1 <= n <= len(self.campaign):
+            return self.campaign[n - 1]
+        return None
+
+    def level_n_of(self, passage_id: str) -> int | None:
+        """Which level a passage IS. `None` for a passage outside the campaign.
+
+        The submit request carries `passage_id` and the ruleset id, never
+        `level_n` — the client asserts nothing about where it is in the
+        campaign, exactly as it asserts nothing about its own score.
+        """
+        for entry in self.campaign:
+            if entry.passage_id == passage_id:
+                return entry.n
+        return None
+
+    def resolve(self, n: int) -> tuple[PassageBundle, LevelConfig] | None:
+        """`level_n` -> the passage to render and the ruleset to play it under."""
+        entry = self.campaign_level(n)
+        if entry is None:
+            return None
+        bundle = self.passage(entry.passage_id)
+        ruleset = self.ruleset(entry.level_id)
+        if bundle is None or ruleset is None:
+            return None
+        return bundle, ruleset
 
 
 def load_content(
@@ -660,7 +701,7 @@ def load_content(
     assert_tables_match_files()
 
     judge = JudgeConfig.load(cfg_dir / "judge.toml")
-    schedule = ScheduleFile.load(cfg_dir / "schedule.toml")
+    progression = ProgressionFile.load(cfg_dir / "progression.toml")
     copy = load_copy(cfg_dir / "copy.toml")
 
     passages, warnings = _load_passages(data_root / "passages", watermark.wm_config_id)
@@ -673,19 +714,18 @@ def load_content(
             "(TECH_PLAN.md §7.5)."
         )
 
-    for slot in schedule.days:
-        if slot.passage_id not in passages:
-            msg = (
-                f"schedule.toml maps {slot.date.isoformat()} -> {slot.passage_id}, which "
-                f"has no data/passages/{slot.passage_id}.public.json."
-            )
-            if schedule.strict:
-                raise ValueError(msg + " schedule.toml has strict = true.")
-            warnings.append(msg + " Skipping that day (schedule.toml strict = false).")
-        elif slot.level_id not in levels:
+    # An unknown ruleset id is a config error rather than a packing state, so it
+    # is checked BEFORE the dev fallback and regardless of `strict`: a campaign
+    # that names a level `levels.toml` never defined has no check list to play
+    # under and would 500 on the first submit of that level.
+    for spec in progression.levels:
+        if spec.rules not in levels:
             raise ValueError(
-                f"schedule.toml maps {slot.date.isoformat()} to level {slot.level_id}, "
-                "which levels.toml does not define."
+                f"progression.toml runs level {spec.n} under rules {spec.rules!r}, which "
+                "data/config/levels.toml does not define. Fix the `rules` id in "
+                "progression.toml, or add that level to levels.toml — the ids are "
+                "`L1`..`L6` and they name the ordered check list, not the campaign "
+                "position."
             )
 
     bundle_id, bundle_warnings = _resolve_asset_bundle_id(
@@ -693,25 +733,17 @@ def load_content(
     )
     warnings.extend(bundle_warnings)
 
-    # The dev bundle, LAST, so a real passage of the same id always wins and so
-    # it can carry the asset_bundle_id the rest of the tree resolved to.
-    if not is_production and DEV_PASSAGE_ID not in passages:
-        dev = _dev_bundle(
-            data_root,
-            wm_config_id=watermark.wm_config_id,
-            asset_bundle_id=bundle_id,
-            scoring_version=scoring.scoring_version,
-            judge_prompt_id=judge.prompt_id,
-            level_id=schedule.intro.level_id,
-        )
-        if dev is not None:
-            passages[DEV_PASSAGE_ID] = dev
-            warnings.append(
-                f"no packed passage for today; serving the DEV fixture {DEV_PASSAGE_ID} from "
-                "data/dev/passage.txt so the page is playable. It is human prose that already "
-                "reads below the notch, so it is not a puzzle. `forge publish` is the "
-                "supported way to add a real one (TECH_PLAN.md §6.4)."
-            )
+    campaign, dev = _resolve_campaign(
+        data_root,
+        progression,
+        passages,
+        warnings,
+        wm_config_id=watermark.wm_config_id,
+        asset_bundle_id=bundle_id,
+        scoring_version=scoring.scoring_version,
+        judge_prompt_id=judge.prompt_id,
+        is_production=is_production,
+    )
 
     return Content(
         data_root=data_root,
@@ -720,9 +752,93 @@ def load_content(
         levels_file=levels_file,
         scoring=scoring,
         judge=judge,
-        schedule=schedule,
+        progression=progression,
+        campaign=campaign,
         copy=copy,
         passages=passages,
         asset_bundle_id=bundle_id,
+        dev=dev,
         warnings=tuple(warnings),
     )
+
+
+def _resolve_campaign(
+    data_root: Path,
+    progression: ProgressionFile,
+    passages: dict[str, PassageBundle],
+    warnings: list[str],
+    *,
+    wm_config_id: str,
+    asset_bundle_id: str,
+    scoring_version: str,
+    judge_prompt_id: str,
+    is_production: bool,
+) -> tuple[tuple[CampaignLevel, ...], bool]:
+    """`progression.toml` + the loaded passages -> the campaign that can be played.
+
+    Two distinct situations, and conflating them is what the two branches below
+    exist to prevent:
+
+    * **NO packed passages at all** is a fresh clone, not a broken build.
+      `data/passages/` cannot be filled without a GPU and the gated Gemma-3
+      weights (§6.1, §6.2), so the dev fixture stands in as the entire campaign
+      — level 1 of 1, `dev: true`. Refused in production, where an empty
+      `data/passages/` means the image was built wrong.
+    * **SOME passages, one of them missing** is a hole in the campaign, and
+      under `strict` it stops the process. There is no "skip the day" any more:
+      the levels are ordered and the player walks through them, so a missing
+      level 7 dead-ends everybody who clears level 6.
+    """
+    if not passages:
+        if is_production:
+            raise RuntimeError(
+                "data/passages/ holds no passages, so there is no campaign to serve. "
+                "`forge pack` writes them into the image (TECH_PLAN.md §3); a production "
+                "boot with an empty passage set means the image was built without them."
+            )
+        first_rules = progression.levels[0].rules if progression.levels else "L1"
+        dev_bundle = _dev_bundle(
+            data_root,
+            wm_config_id=wm_config_id,
+            asset_bundle_id=asset_bundle_id,
+            scoring_version=scoring_version,
+            judge_prompt_id=judge_prompt_id,
+            level_id=first_rules,
+        )
+        if dev_bundle is None:
+            warnings.append(
+                "data/passages/ is empty and data/dev/passage.txt could not be read, so "
+                "there is nothing to render at all. Pack a passage with `forge pack` and "
+                "give it a `[[level]]` block in data/config/progression.toml."
+            )
+            return (), False
+        passages[DEV_PASSAGE_ID] = dev_bundle
+        warnings.append(
+            f"no packed passages; serving the DEV fixture {DEV_PASSAGE_ID} from "
+            "data/dev/passage.txt as the whole campaign (level 1 of 1) so the page is "
+            "playable. It is human prose that already reads below the notch, so it is "
+            "not a puzzle. Pack a real one with `forge pack` and give it a `[[level]]` "
+            "block in data/config/progression.toml."
+        )
+        return (CampaignLevel(n=1, passage_id=DEV_PASSAGE_ID, level_id=first_rules),), True
+
+    resolved: list[CampaignLevel] = []
+    for spec in progression.levels:
+        if spec.passage_id not in passages:
+            msg = (
+                f"progression.toml runs level {spec.n} on {spec.passage_id}, which has no "
+                f"data/passages/{spec.passage_id}.public.json. Pack that passage with "
+                "`forge pack`, or remove the level and renumber the ones after it."
+            )
+            if progression.strict:
+                raise ValueError(msg + " progression.toml has strict = true.")
+            # Not strict: the campaign is the CONTIGUOUS PREFIX that resolves.
+            # Dropping the hole and keeping level 8 would renumber nothing and
+            # leave `unlocked` pointing at a level that cannot be reached.
+            warnings.append(
+                msg + f" progression.toml has strict = false, so the campaign stops at level "
+                f"{spec.n - 1}."
+            )
+            break
+        resolved.append(CampaignLevel(n=spec.n, passage_id=spec.passage_id, level_id=spec.rules))
+    return tuple(resolved), False

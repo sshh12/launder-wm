@@ -9,18 +9,17 @@ the memory path shows up as an ImportError rather than as nothing at all.
 from __future__ import annotations
 
 from launder_serve.repo.memory import (
-    MemoryDailyRepo,
     MemoryJudgeCacheRepo,
+    MemoryProgressRepo,
     MemorySpendRepo,
     MemorySubmissionRepo,
 )
 from launder_serve.repo.protocol import (
     CachedVerdict,
     CacheStats,
-    DailyRepo,
-    DailySlot,
     JudgeCacheRepo,
     LeaderRow,
+    ProgressRepo,
     SpendRepo,
     SubmissionRecord,
     SubmissionRepo,
@@ -29,14 +28,13 @@ from launder_serve.repo.protocol import (
 __all__ = [
     "CacheStats",
     "CachedVerdict",
-    "DailyRepo",
-    "DailySlot",
     "JudgeCacheRepo",
     "LeaderRow",
-    "MemoryDailyRepo",
     "MemoryJudgeCacheRepo",
+    "MemoryProgressRepo",
     "MemorySpendRepo",
     "MemorySubmissionRepo",
+    "ProgressRepo",
     "SpendRepo",
     "SubmissionRecord",
     "SubmissionRepo",

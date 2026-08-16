@@ -1,0 +1,70 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p07",
+  "level_id": "L1",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Coffee grading is a complex and nuanced process designed to evaluate the quality and inherent characteristics of green coffee beans before they are roasted. It’s not simply about assigning a numerical score; instead, it’s a comprehensive assessment that considers a multitude of factors impacting the final cup. The grading system, predominantly utilized in Brazil and increasingly adopted internationally, relies on a trained evaluator’s sensory judgment, primarily focusing on defects and attributes indicative of bean quality.  Beans are meticulously examined under bright light, often using a magnifying glass, to identify imperfections like broken beans, chipped beans, insect damage, or discoloration – these are categorized as defects and significantly diminish the grade. Beyond defects, graders meticulously assess the bean’s appearance, noting the uniformity of size and color, as well as the presence of ‘silver skin’ – the protective layer adhering to the bean.  More importantly, the beans are then evaluated for inherent qualities like density, which reflects the bean’s internal structure and potential for consistent roasting, and a “soundness” test, where the bean is gently tapped to detect internal cracks or fragility.  Finally, graders assess the bean’s aroma, carefully noting the intensity and complexity of scents, categorized into descriptive terms such as floral, fruity, nutty, or chocolatey.  These sensory evaluations, combined with the meticulous examination for defects, ultimately determine the bean’s grade, typically ranging from ‘Specialty’ to ‘Commodity’, each reflecting a different level of quality and inherent potential.",
+  "n_words": 236,
+  "detector": {
+    "expected_n_scored": 292,
+    "expected_score": 0.5366821259357868,
+    "expected_z": 6.63858242649035,
+    "g_digest": "blake3:5c3273bbcd7c3139aeba5881d872e5fd5a88bc82dcaf978dec9d70b152ec1fb1"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Coffee grading evaluates the quality and characteristics of green coffee beans before they are roasted.",
+      "label": "grading beans before roasting",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Grading rests on a trained evaluator's sensory judgement rather than on a numerical score alone.",
+      "label": "the trained evaluator's judgement",
+      "required": true
+    },
+    {
+      "id": "c3",
+      "text": "Beans are examined under bright light, often with a magnifying glass, for defects such as broken beans, chipped beans, insect damage, or discoloration, which lower the grade.",
+      "label": "the inspection for defects",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "Graders assess the bean's appearance, noting uniformity of size and colour and the presence of silver skin.",
+      "label": "the bean's appearance",
+      "required": false
+    },
+    {
+      "id": "c5",
+      "text": "Beans are evaluated for density, which reflects the bean's internal structure and its potential for consistent roasting.",
+      "label": "the density of the bean",
+      "required": false
+    },
+    {
+      "id": "c6",
+      "text": "Graders assess the bean's aroma, describing the scents with terms such as floral, fruity, nutty, or chocolatey.",
+      "label": "the aroma descriptors",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "The assessment ends in a grade that typically ranges from 'Specialty' to 'Commodity'.",
+      "label": "the Specialty-to-Commodity grades",
+      "required": true
+    }
+  ],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

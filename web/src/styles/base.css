@@ -48,11 +48,30 @@
     padding-right: max(var(--gut), env(safe-area-inset-right));
   }
 
+  /* The credit line. It is small — it is the last thing on the page and it is
+     not the game — but it is TWO LINKS, and a link is only a link if it looks
+     tappable. So the links sit at 11px in full --ink with a real underline
+     while the row around them stays --ink-2: anything dimmer or smaller down
+     here reads as a disabled hint and nobody touches it. The vertical padding
+     is the tap target, not decoration. */
   .foot {
-    padding: 18px 0 10px;
-    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: 12px 0 10px;
+    font-size: 11px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .credit {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    padding: 6px 0;
+  }
+  .footsep {
     color: var(--ink-2);
   }
 }

@@ -7,9 +7,8 @@ the dual-engine contract suite is what proves it stayed that way.
 
 **psycopg3, not asyncpg.** asyncpg is not libpq and rejects Railway's
 `DATABASE_URL` query params (`sslmode=`, `channel_binding=`), forcing URL
-surgery *and* a second driver for Alembic. Throughput is irrelevant at
-daily-puzzle volume; accepting `${{Postgres.DATABASE_URL}}` verbatim is worth
-more.
+surgery *and* a second driver for Alembic. Throughput is irrelevant at this
+volume; accepting `${{Postgres.DATABASE_URL}}` verbatim is worth more.
 
 One hazard worth naming because it bites silently: **SQLite does not store
 timezones.** A `datetime` written as UTC-aware comes back naive, and a naive
@@ -29,18 +28,17 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from launder_core.schemas import EditOp
-from launder_serve.repo.models import METADATA, daily_slot, judge_cache, spend_ledger, submission
+from launder_serve.repo.models import METADATA, judge_cache, progress, spend_ledger, submission
 from launder_serve.repo.protocol import (
     CachedVerdict,
     CacheStats,
-    DailySlot,
     LeaderRow,
     SubmissionRecord,
 )
 
 __all__ = [
-    "SqlDailyRepo",
     "SqlJudgeCacheRepo",
+    "SqlProgressRepo",
     "SqlSpendRepo",
     "SqlSubmissionRepo",
     "create_all",
@@ -106,7 +104,7 @@ class SqlSubmissionRepo:
 
     async def record(self, s: SubmissionRecord) -> None:
         stmt = _insert(submission, self._engine.dialect.name).values(
-            day=s.day,
+            level_n=s.level_n,
             passage_id=s.passage_id,
             level_id=s.level_id,
             text_hash=s.text_hash,
@@ -126,11 +124,11 @@ class SqlSubmissionRepo:
             elapsed_ms=s.elapsed_ms,
             created_at=s.created_at,
         )
-        # The dedup index is (day, level_id, text_hash): a player nudging a
-        # broken submission and resending identical text updates the row rather
-        # than minting a second leaderboard entry.
+        # The dedup index is (level_n, text_hash): a player nudging a broken
+        # submission and resending identical text updates the row rather than
+        # minting a second leaderboard entry.
         stmt = stmt.on_conflict_do_update(
-            index_elements=[submission.c.day, submission.c.level_id, submission.c.text_hash],
+            index_elements=[submission.c.level_n, submission.c.text_hash],
             set_={
                 "cleared": stmt.excluded.cleared,
                 "provisional": stmt.excluded.provisional,
@@ -147,7 +145,7 @@ class SqlSubmissionRepo:
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
 
-    async def best_for_day(self, day: date, level_id: str, limit: int) -> list[LeaderRow]:
+    async def best_for_level(self, level_n: int, limit: int) -> list[LeaderRow]:
         stmt = (
             sa.select(
                 submission.c.distance,
@@ -156,8 +154,7 @@ class SqlSubmissionRepo:
                 submission.c.created_at,
             )
             .where(
-                submission.c.day == day,
-                submission.c.level_id == level_id,
+                submission.c.level_n == level_n,
                 submission.c.cleared.is_(True),
                 submission.c.provisional.is_(False),
             )
@@ -176,10 +173,9 @@ class SqlSubmissionRepo:
             for row in rows
         ]
 
-    async def rank_of(self, day: date, level_id: str, distance: int) -> int:
+    async def rank_of(self, level_n: int, distance: int) -> int:
         stmt = sa.select(sa.func.count()).where(
-            submission.c.day == day,
-            submission.c.level_id == level_id,
+            submission.c.level_n == level_n,
             submission.c.cleared.is_(True),
             submission.c.provisional.is_(False),
             submission.c.distance < distance,
@@ -188,8 +184,8 @@ class SqlSubmissionRepo:
             better = (await conn.execute(stmt)).scalar_one()
         return int(better) + 1
 
-    async def count_for_day(self, day: date) -> int:
-        stmt = sa.select(sa.func.count()).where(submission.c.day == day)
+    async def count_for_level(self, level_n: int) -> int:
+        stmt = sa.select(sa.func.count()).where(submission.c.level_n == level_n)
         async with self._engine.connect() as conn:
             return int((await conn.execute(stmt)).scalar_one())
 
@@ -308,51 +304,36 @@ class SqlSpendRepo:
         return float(value or 0.0)
 
 
-class SqlDailyRepo:
+class SqlProgressRepo:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def for_date(self, d: date) -> DailySlot | None:
-        stmt = sa.select(daily_slot).where(daily_slot.c.day == d)
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).mappings().first()
-        if row is None:
-            return None
-        return DailySlot(
-            day=row["day"],
-            passage_id=row["passage_id"],
-            level_id=row["level_id"],
-            created_at=_as_utc(row["created_at"]),
-            authored_par=row["authored_par"],
-            observed_par=row["observed_par"],
+    async def record(self, session_id: str, level_n: int, distance: int) -> None:
+        stmt = _insert(progress, self._engine.dialect.name).values(
+            session_id=session_id,
+            level_n=level_n,
+            distance=distance,
+            created_at=datetime.now(UTC),
         )
-
-    async def set_observed_par(self, day: date, level_id: str, par: int) -> None:
-        stmt = (
-            sa.update(daily_slot)
-            .where(daily_slot.c.day == day, daily_slot.c.level_id == level_id)
-            .values(observed_par=par)
-        )
-        async with self._engine.begin() as conn:
-            await conn.execute(stmt)
-
-    async def upsert(self, slot: DailySlot) -> None:
-        """Not part of the §9.6 interface: seeding, used by boot and by tests."""
-        stmt = _insert(daily_slot, self._engine.dialect.name).values(
-            day=slot.day,
-            passage_id=slot.passage_id,
-            level_id=slot.level_id,
-            authored_par=slot.authored_par,
-            observed_par=slot.observed_par,
-            created_at=slot.created_at,
-        )
+        # LOWER DISTANCE WINS, in the WHERE of the DO UPDATE rather than in a
+        # read-then-write: two tabs finishing the same level at once would
+        # otherwise race and the loser's worse score would land last. `created_at`
+        # is deliberately NOT refreshed — it stamps the best clear, not the most
+        # recent replay.
         stmt = stmt.on_conflict_do_update(
-            index_elements=[daily_slot.c.day],
-            set_={
-                "passage_id": stmt.excluded.passage_id,
-                "level_id": stmt.excluded.level_id,
-                "authored_par": stmt.excluded.authored_par,
-            },
+            index_elements=[progress.c.session_id, progress.c.level_n],
+            set_={"distance": stmt.excluded.distance},
+            where=stmt.excluded.distance < progress.c.distance,
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
+
+    async def cleared_levels(self, session_id: str) -> list[int]:
+        stmt = (
+            sa.select(progress.c.level_n)
+            .where(progress.c.session_id == session_id)
+            .order_by(progress.c.level_n.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).scalars().all()
+        return [int(n) for n in rows]

@@ -1,0 +1,70 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p02",
+  "level_id": "L1",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Flood insurance provides crucial financial protection against property damage caused by flooding, a risk that extends far beyond simply living near a river or coastline. While the National Flood Insurance Program (NFIP) offered by the Federal Emergency Management Agency (FEMA) is the most common source of flood insurance in the United States, private flood insurance options are increasingly available, offering tailored coverage and potentially lower premiums for some homeowners.  The NFIP insures properties located in Special Flood Hazard Areas, designated by FEMA based on historical flood data and risk assessments – areas with a one-percent chance of flooding in any given year, often referred to as the 100-year floodplain.  Coverage typically includes damage to the building’s structure, electrical and plumbing systems, and personal belongings, but it does not cover damage to landscaping, detached garages, or fences.  Premiums are determined by a property’s elevation relative to the Base Flood Elevation (BFE), the highest known elevation to which floodwater is expected to rise during a 100-year flood event, as well as the insured’s deductible, which is the amount the homeowner pays out-of-pocket before the insurance coverage kicks in.  It’s important to note that standard homeowners insurance policies generally exclude flood damage, highlighting the necessity of purchasing separate flood insurance to safeguard against this devastating natural hazard.  Understanding your flood risk and obtaining adequate coverage is a vital step in responsible property ownership.",
+  "n_words": 230,
+  "detector": {
+    "expected_n_scored": 284,
+    "expected_score": 0.51971610225617,
+    "expected_z": 3.5309771086951556,
+    "g_digest": "blake3:d04fcd10948eb0ce9624c7b7b9c8609b4b7b02c82c278238eb90f1f0f22f84e6"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [
+    {
+      "id": "c1",
+      "text": "The National Flood Insurance Program, offered by the Federal Emergency Management Agency, is the most common source of flood insurance in the United States.",
+      "label": "the NFIP flood program",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Private flood insurance is increasingly available and can offer tailored coverage and potentially lower premiums for some homeowners.",
+      "label": "private flood insurance options",
+      "required": false
+    },
+    {
+      "id": "c3",
+      "text": "The NFIP insures properties in Special Flood Hazard Areas, which FEMA designates from historical flood data and risk assessments.",
+      "label": "the Special Flood Hazard Areas",
+      "required": false
+    },
+    {
+      "id": "c4",
+      "text": "A Special Flood Hazard Area has a one-percent chance of flooding in any given year and is often called the 100-year floodplain.",
+      "label": "the one-percent floodplain",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Flood coverage typically includes damage to the building's structure, its electrical and plumbing systems, and personal belongings, but not landscaping, detached garages or fences.",
+      "label": "what the policy covers",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Premiums depend on the property's elevation relative to the Base Flood Elevation, the highest level floodwater is expected to reach in a 100-year flood, and on the insured's deductible.",
+      "label": "how premiums are set",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Standard homeowners insurance policies generally exclude flood damage, so separate flood insurance must be purchased.",
+      "label": "the homeowners-policy exclusion",
+      "required": true
+    }
+  ],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

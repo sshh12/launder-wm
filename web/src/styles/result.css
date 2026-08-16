@@ -65,6 +65,8 @@
     text-decoration-color: var(--cold);
     color: var(--ink);
   }
+  /* pre-wrap, because the end-of-campaign share is three lines and a paste that
+     collapses them is not the artifact the player earned. */
   .sharebox {
     margin-top: 14px;
     border: 1px solid var(--rule);
@@ -73,6 +75,18 @@
     line-height: 20px;
     white-space: pre-wrap;
     color: var(--ink-2);
+  }
+
+  /* The last thing the game says, and the only place it says it. Serif and full
+     --ink: it stands in for the advance button, so it must not read as a note
+     about one. */
+  .allclear {
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 27px;
+    margin-top: 14px;
+    max-width: 32ch;
+    color: var(--ink);
   }
 
   /* Desktop side rail, >= 56.25em only. */

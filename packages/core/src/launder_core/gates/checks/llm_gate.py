@@ -20,11 +20,12 @@ Two policies here are not negotiable:
   Reporting it is the correct and complete response to injected text; acting on
   it is not.
 * Everything else fails **open** on a provider error (§7.5). After the provider
-  has exhausted retry and failover, the submission clears PROVISIONALLY: the
-  chime plays, the leaderboard and the streak exclude it, and the UI says "gate
-  unavailable". The deterministic checks already caught every mechanical
-  exploit, so a false clear costs a leaderboard row while a false rejection
-  costs a player.
+  has exhausted its one retry, the submission clears PROVISIONALLY: the chime
+  plays and the UI says "gate unavailable", but the campaign does not advance to
+  the next level, nothing is written to the player's progress, and the run is
+  excluded from the per-level best-distance ranking. The deterministic checks
+  already caught every mechanical exploit, so a false clear costs one unranked
+  run while a false rejection costs a player.
 """
 
 from __future__ import annotations
@@ -172,8 +173,8 @@ class LlmGate:
                 meta={"error": type(exc).__name__},
             )
         except Exception as exc:
-            # A provider that raises anything else is buggy: §7.5 makes retry
-            # and failover the PROVIDER's job, so by the time it reaches here
+            # A provider that raises anything else is buggy: §7.5 makes the
+            # retry policy the PROVIDER's job, so by the time it reaches here
             # it should already be a JudgeUnavailable. Log it as the bug it is,
             # then treat it the same way — a bug in our provider must not cost
             # the player their submission.

@@ -1,0 +1,49 @@
+{
+  "schema": "launder.passage.server/1",
+  "id": "p06",
+  "claims": [
+    {
+      "id": "c1",
+      "text": "Library cataloguing systematically describes and organizes library materials so that patrons and staff can easily locate them.",
+      "label": "the purpose of cataloguing",
+      "required": true
+    },
+    {
+      "id": "c2",
+      "text": "Cataloguing begins with the choice of a descriptive format, most commonly the Resource Description and Access (RDA) standard.",
+      "label": "the RDA descriptive standard",
+      "required": false
+    },
+    {
+      "id": "c3",
+      "text": "Catalogers examine the item itself and note its title, author, publisher, and date of publication.",
+      "label": "the item's recorded details",
+      "required": true
+    },
+    {
+      "id": "c4",
+      "text": "That information is translated into a machine-readable bibliographic record, typically with software such as Koha or OCLC Connexion.",
+      "label": "the machine-readable record",
+      "required": true
+    },
+    {
+      "id": "c5",
+      "text": "Catalogers assign subject headings from controlled vocabularies such as the Library of Congress Subject Headings or the Dewey Decimal System.",
+      "label": "the assigned subject headings",
+      "required": true
+    },
+    {
+      "id": "c6",
+      "text": "Each item is given a unique identifier: an ISSN for periodicals or an ISBN for books.",
+      "label": "the ISSN and ISBN identifiers",
+      "required": false
+    },
+    {
+      "id": "c7",
+      "text": "Catalogers also write a concise abstract or description giving a brief overview of the item's content and significance.",
+      "label": "the concise abstract",
+      "required": false
+    }
+  ],
+  "par": 4
+}
