@@ -1,0 +1,27 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p_intro",
+  "level_id": "L1",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Salt mining, a practice with a surprisingly long history, involves extracting sodium chloride – commonly known as salt – from deposits found beneath the Earth’s surface. The method employed depends largely on the geological context of the deposit, with several distinct techniques utilized across the globe. In solution mining, water is pumped deep into the salt deposit, dissolving the salt and creating a brine solution. This brine is then pumped back to the surface, where the water is evaporated to crystallize the salt. This process is particularly common in areas with vast, relatively shallow salt beds. In underground mining, tunnels are excavated into the salt deposit, similar to coal mining, and the salt is then extracted in large blocks or slabs. This method is often used when the salt deposit is deeper and more complex in structure. Rock salt, formed over millions of years from ancient seas, is typically mined using room-and-pillar mining, leaving behind supportive pillars of salt that prevent the mine roof from collapsing.  Finally, solar salt evaporation, prevalent in arid regions, relies on the sun’s heat to evaporate seawater, leaving behind salt crystals. Regardless of the method, careful consideration must be given to environmental impact, including managing brine disposal and minimizing land disturbance, as salt mining operations can significantly alter the landscape and surrounding hydrology. \n\n---\n\nWould you like me to expand on a specific aspect of salt mining, such as its uses, history, or environmental concerns? Or perhaps you'd like me to write a paragraph focusing on a particular mining method?",
+  "n_words": 255,
+  "detector": {
+    "expected_n_scored": 299,
+    "expected_score": 0.5274719283714785,
+    "expected_z": 5.016393415212625,
+    "g_digest": "blake3:1736422ff3f146e4e3f9e38b965cc8e965ca3df813aebb7d1cefff7a1515b8a7"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

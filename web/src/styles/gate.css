@@ -1,0 +1,192 @@
+@layer components {
+  /* The care-symbol gate vocabulary, grafted from direction C (§10.6). A failed
+     check is a STRUCK CROSS — shape, not colour, so it survives colour
+     blindness and greyscale. */
+  .sym {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    color: var(--ink-2);
+  }
+  .sym[data-s="pass"] {
+    color: var(--cold);
+  }
+  .sym[data-s="fail"] {
+    color: var(--hot);
+  }
+  .sym[data-s="error"] {
+    color: var(--ink-2);
+  }
+  .sym[data-s="pending"] {
+    color: var(--ink-2);
+    stroke-dasharray: 2.2 2.4;
+  }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .pips {
+    display: flex;
+    gap: 7px;
+    align-items: center;
+    padding: 6px 2px;
+  }
+  /* Never collapses at any width: the live words-changed count is one of the
+     four things that are the game (§10.5). */
+  .changed {
+    margin-left: auto;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .changed b {
+    font-weight: 500;
+    color: var(--ink);
+    font-size: 13px;
+  }
+  .parline {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  /* Check and the pips live in the thumb zone (§10.5). */
+  .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    background: var(--bg);
+    border-top: 1px solid var(--rule);
+    padding: 10px 0 max(12px, env(safe-area-inset-bottom));
+    margin-top: var(--sp-3);
+    display: flex;
+    gap: var(--sp-2);
+  }
+  .btn {
+    flex: 1;
+    height: 48px;
+    background: var(--ink);
+    color: var(--bg);
+    border-radius: var(--r);
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-weight: 500;
+    transition-property: opacity;
+    transition-duration: 120ms;
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+    letter-spacing: 0.1em;
+  }
+  .btn[data-variant="ghost"] {
+    background: none;
+    color: var(--ink);
+    border: 1px solid var(--rule);
+    flex: 0 0 auto;
+    padding: 0 14px;
+  }
+  .btn:focus-visible {
+    outline-offset: 2px;
+  }
+
+  /* While the textarea is focused the submit bar collapses to a status strip:
+     submitting costs an API call and a mis-tap costs a gate rejection (§10.5).
+     Enter inserts a newline; there is no accidental submit path. */
+  .strip {
+    display: none;
+    height: 36px;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .strip b {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .strip .pips {
+    margin-left: auto;
+  }
+
+  /* Every row in the checklist is a disclosure: tap it and the constraint
+     explains itself in place (§10.7). One delegated handler serves all three
+     .checks containers. */
+  .checks {
+    margin-top: 14px;
+    border-top: 1px solid var(--rule);
+  }
+  .check {
+    border-bottom: 1px solid var(--rule);
+  }
+  .checkrow {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-family: inherit;
+    color: inherit;
+    background: none;
+    text-align: left;
+  }
+  .check[data-disclosure="1"] .checkrow {
+    grid-template-columns: 20px minmax(0, 1fr) auto 14px;
+    cursor: pointer;
+  }
+  .cmore {
+    font-size: 11px;
+    letter-spacing: 0;
+    color: var(--ink-2);
+    text-align: right;
+    transition-property: color;
+    transition-duration: 120ms;
+  }
+  .checkrow:hover .cmore {
+    color: var(--ink);
+  }
+  .checkrow[aria-expanded="true"] .cmore {
+    color: var(--hot);
+  }
+  .checkrow:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: -2px;
+  }
+  /* This is where a level's rules are allowed to be wordy, because the player
+     asked (§10.7). */
+  .cx {
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 24px;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--ink);
+    padding: 0 0 13px;
+    max-width: 42ch;
+  }
+  .check .sym {
+    width: 20px;
+    height: 20px;
+  }
+  .check .why {
+    color: var(--ink-2);
+    letter-spacing: 0.04em;
+    text-transform: none;
+    font-size: 11px;
+    text-align: right;
+    white-space: nowrap;
+  }
+}

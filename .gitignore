@@ -216,3 +216,64 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ==========================================================================
+# Launder LM — TECH_PLAN.md §11.3 (.dockerignore) and §3 (repo layout).
+# What must never enter git, and why.
+# ==========================================================================
+
+# Secrets. .env holds OPENAI_API_KEY / ANTHROPIC_API_KEY / HF_TOKEN. The
+# generic template above already ignores `.env`; these are the siblings.
+.env
+.env.*
+!.env.example
+
+# Build INPUTS for the tokenizer packer, not build outputs. The 33 MB
+# google/gemma-3-4b-it tokenizer.json is what `forge tok pack` reads; the
+# 1,192,944-byte packed blob in data/assets/ is what ships and IS committed.
+data/build/
+
+# The fat intermediate that triage reads: token_ids, g_values_b64,
+# scored_mask_b64, word_spans, token_char_spans, prefix_z, reject_reasons.
+# Hundreds of MB per 400-candidate run.
+data/candidates/
+
+# forge doctor output + seeds + versions, per generation run. Provenance, but
+# machine-local and regenerated every session.
+data/runs/
+
+# Model weights, ever, by accident. 8.64 GB for gemma-3-4b-it.
+*.pt
+*.pth
+*.ckpt
+*.gguf
+*.safetensors
+
+# Local artifacts
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+node_modules/
+reports/
+exports/
+scratch/
+*.sqlite3
+# WAL and shared-memory siblings. `*.sqlite3` did not cover them, so booting
+# the dev server once left `launder-dev.sqlite3-wal` and `launder-dev.sqlite3-shm`
+# untracked-and-not-ignored at the repo root, and the first `git add -A`
+# committed them. The dev DB runs in WAL mode deliberately (§9.6).
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
+
+# NOT ignored, stated so nobody "cleans" them up:
+#   uv.lock                              one lock for all three members
+#   data/assets/**                       key material + the packed blob
+#   data/golden/**                       the parity gate, read by pytest AND vitest
+#   data/config/**                       every tunable in the modularity contract
+#   data/passages/*.author.json          repo only, but COMMITTED — it is the
+#                                        answer key and the provenance record;
+#                                        it is excluded from the IMAGE, not git
+#   tools/reference/**                   provenance for the ports

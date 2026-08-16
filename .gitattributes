@@ -1,0 +1,61 @@
+# .gitattributes — line endings, and the files whose BYTES are load-bearing.
+#
+# This repo hashes its own artifacts. `data/golden/CHECKSUM` is a sha256 over
+# every file in `data/golden/`, `data/MANIFEST.json` is a blake3 over every
+# shipped asset and passage, and `web/vendor/*.sha256` pins the vendored
+# tokenizer. Git's autocrlf would rewrite line endings on checkout, changing
+# those bytes and failing every one of those checks on a Windows clone while
+# CI stayed green on Linux — the exact "plausible numbers that mean nothing"
+# failure mode TECH_PLAN.md §14.1 ranks first, arriving through the VCS.
+#
+# So: normalize source to LF everywhere, and mark every hashed artifact -text
+# so Git stores and restores it byte for byte.
+
+# ---------------------------------------------------------------------------
+# Source: one line ending, everywhere, regardless of who clones it.
+# ---------------------------------------------------------------------------
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# HASHED ARTIFACTS — never normalize. Changing a byte breaks a digest.
+# ---------------------------------------------------------------------------
+
+# Key material and shipped assets (blake3 in MANIFEST.json; the sampling table
+# additionally carries four digests in data/config/watermark.toml).
+data/assets/**            -text
+
+# The golden files. `sha256sum -c CHECKSUM` is run from inside data/golden/ and
+# splits on LF: a CRLF here puts a trailing \r inside the FILENAME field, so the
+# checksum gate fails with "No such file or directory" — a gate that cannot read
+# its own file.
+data/golden/**            -text
+
+# Passage bundles: blake3'd in MANIFEST.json, and `forge verify` re-derives
+# g_digest / expected_z from the exact bytes.
+data/passages/**          -text
+data/MANIFEST.json        -text
+
+# The dev passage is inlined into index.html verbatim and compared byte for byte
+# by web/tests/boot.test.ts.
+data/dev/passage.txt      -text
+
+# The vendored tokenizer is pinned by a sibling .sha256.
+web/vendor/**             -text
+
+# ---------------------------------------------------------------------------
+# Binary, for completeness — Git detects most of these, but be explicit.
+# ---------------------------------------------------------------------------
+*.br                      binary
+*.bin                     binary
+*.png                     binary
+*.woff2                   binary
+*.sqlite3                 binary
+
+# ---------------------------------------------------------------------------
+# Generated / vendored: keep them out of diffs and language stats.
+# ---------------------------------------------------------------------------
+uv.lock                   linguist-generated=true
+web/package-lock.json     linguist-generated=true
+tools/reference/**        linguist-vendored=true
+web/vendor/**             linguist-vendored=true
+data/golden/tokenizer_golden.json  linguist-generated=true

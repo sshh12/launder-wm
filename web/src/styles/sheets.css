@@ -1,0 +1,159 @@
+@layer components {
+  /* Explanatory prose is allowed, but only ON DEMAND, inside a sheet (§10.6).
+     A rejection is a bottom SHEET, never a toast — a toast is too short to read
+     a sentence (§10.5). Zero backdrop-filter (§10.6). */
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    background: color-mix(in oklab, var(--ink) 42%, transparent);
+    display: none;
+  }
+  .scrim[data-open="1"] {
+    display: block;
+  }
+
+  .sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 80;
+    background: var(--bg);
+    border-top: 1px solid var(--rule);
+    padding: var(--sp-4) max(var(--gut), env(safe-area-inset-left))
+      max(18px, env(safe-area-inset-bottom));
+    max-height: 88dvh;
+    overflow-y: auto;
+    display: none;
+  }
+  .sheet[data-open="1"] {
+    display: block;
+    animation: rise 180ms cubic-bezier(0.22, 0.61, 0.36, 1) 1;
+  }
+  @keyframes rise {
+    from {
+      transform: translateY(14px);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  .sheet[data-size="full"] {
+    top: 0;
+    max-height: none;
+  }
+  .sheetin {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  .sheethead {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: var(--sp-3);
+  }
+  .sheettitle {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .x {
+    margin-left: auto;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .verdict {
+    font-family: var(--serif);
+    font-size: 24px;
+    line-height: 30px;
+    font-weight: 400;
+  }
+  .verdict[data-v="fail"] {
+    color: var(--hot);
+  }
+  .verdict[data-v="pass"] {
+    color: var(--cold);
+  }
+  /* Errors are specific and never apologize (§10.6). */
+  .reason {
+    font-family: var(--serif);
+    margin-top: var(--sp-2);
+    font-size: 17px;
+    line-height: 27px;
+    max-width: 40ch;
+  }
+  .note {
+    margin-top: 10px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  /* ---- the primer (first land, Wordle's contract) ---------------------- */
+  .pr-lede {
+    font-family: var(--serif);
+    font-size: 21px;
+    line-height: 29px;
+    margin: 2px 0 11px;
+    max-width: 24ch;
+    color: var(--ink);
+  }
+  .pr-body {
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 26px;
+    margin: 0 0 15px;
+    max-width: 42ch;
+    color: var(--ink);
+  }
+  /* The demo strip is GENERATED, never hand-painted: it is the production
+     detector over the real key, which is why the most banal words in it are the
+     hottest. A hand-authored stain would be the one surface in the product free
+     to teach the false heuristic (§10.7). */
+  .pr-demo {
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 28px;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: var(--sp-3) 0;
+    margin-bottom: 9px;
+  }
+  .pr-demo .mirror {
+    padding: 0;
+    font-size: 16px;
+    line-height: 28px;
+    min-height: 0;
+  }
+  .pr-cap {
+    font-size: 10px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    line-height: 17px;
+    margin: 0 0 17px;
+    max-width: 38ch;
+  }
+  .pr-foot {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-top: 1px solid var(--rule);
+    padding-top: 15px;
+  }
+  .pr-daily {
+    flex: none;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+}

@@ -1,0 +1,88 @@
+@layer components {
+  /* The slider intro TEACHES; prose does not. Standing instructional text on
+     the playing screen is <=12 words total (§10.6), so the lesson lives here,
+     wordless where it can be: drag, and watch a real prefix z rise. */
+  .introline {
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 27px;
+    color: var(--ink);
+    margin: 14px 0 var(--sp-4);
+    max-width: 34ch;
+  }
+  .sliderwrap {
+    padding: var(--sp-1) 0 0;
+  }
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 30px;
+    background: none;
+    display: block;
+  }
+  .slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--rule);
+  }
+  .slider::-moz-range-track {
+    height: 2px;
+    background: var(--rule);
+  }
+  /* A 2px ink blade with a 16px hit area. The borders must be TRANSPARENT for
+     background-clip: padding-box to actually clip anything. */
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 28px;
+    margin-top: -13px;
+    background: var(--ink);
+    border-radius: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    background-clip: padding-box;
+  }
+  .slider::-moz-range-thumb {
+    width: 2px;
+    height: 28px;
+    background: var(--ink);
+    border: 0;
+    border-radius: 0;
+  }
+  .slider:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 4px;
+  }
+  .slidescale {
+    position: relative;
+    height: 20px;
+  }
+  .slidescale i {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 5px;
+    background: var(--rule);
+  }
+  .slidescale i[data-floor="1"] {
+    background: var(--hot);
+    height: 9px;
+  }
+  .slidescale u {
+    position: absolute;
+    top: 10px;
+    text-decoration: none;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--hot);
+    white-space: nowrap;
+  }
+  .wordcount {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+}

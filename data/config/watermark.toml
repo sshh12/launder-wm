@@ -1,0 +1,112 @@
+# data/config/watermark.toml — TECH_PLAN.md §4.2
+#
+#   CHANGING THIS FILE INVALIDATES EVERY PASSAGE.
+#
+# It changes `wm_config_id`, which the browser asserts against every passage on
+# load. Every `*.public.json` becomes invalid, the sigma(T) curve becomes
+# invalid, and every golden vector becomes invalid (§12 row 25). The intended
+# workflow is: never change it. If it must change, it is a full
+# `forge gen -> analyze -> solve -> triage -> calibrate -> vectors -> pack ->
+# verify` cycle, and the wm_config_id assertion is what makes forgetting a step
+# a loud failure instead of a silent one.
+
+schema = "launder.watermark/1"
+
+# --- the six fields that enter wm_config_id, and nothing else ----------------
+ngram_len              = 5        # H+1: 4 context tokens + 1 current token
+context_history_size   = 1024
+sampling_table_size    = 65536    # 2**16 -> 8,192-byte packed bitmap
+sampling_table_seed    = 0        # NEVER change (§6.6)
+skip_first_ngram_calls = false
+
+# The canonical published 30-key set. DeepMind's synthid_mixin, the HF
+# research-projects config, and both published Hub detector config.json files
+# agree byte-for-byte.
+#
+# len(keys) == 30 IS the tournament depth m. Do NOT copy the transformers
+# docstring's 9-key example.
+#
+# Why the published keys and not fresh ones: secrecy is forfeit the moment we
+# ship them (accepted, decision #1). Using the published set means a skeptic can
+# point stock transformers.SynthIDTextWatermarkDetector at our passages and
+# confirm. That verifiability is the entire pitch and it costs nothing.
+keys = [654,400,836,123,340,443,597,160,57,29,590,639,13,715,468,990,
+        966,226,324,585,118,504,421,521,129,669,732,225,90,960]
+
+# --- derived, recorded so a mismatch fails at boot rather than at play -------
+# sha256(canonical_json({context_history_size, keys, ngram_len,
+#   sampling_table_seed, sampling_table_size, skip_first_ngram_calls}))
+# with sorted keys and no whitespace. Computed, not guessed.
+wm_config_id = "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591"
+
+# The scheme, stated so nobody "upgrades" the detector into the other one.
+# Two mutually incompatible g-value schemes exist in the wild (§4.1); they are
+# bit-incompatible and the DeepMind `main` variant CANNOT detect anything HF
+# generates. This project is the sampling-table variant, permanently.
+scheme       = "sampling_table"      # NOT "iterated_lcg" (DeepMind main @32197c34)
+hash_iv      = 1
+lcg_multiplier = 6364136223846793005
+lcg_increment  = 1
+
+[table]
+# The sampling table is KEY MATERIAL. It is built ONCE, on CPU, and committed.
+# Every consumer loads this file — including the generator, which explicitly
+# overwrites the HF processor's own table. HF builds it with
+# torch.Generator(device=device).manual_seed(0); CPU is MT19937 and CUDA is
+# Philox, so a device-built table would give g-values UNCORRELATED with the
+# watermark: a needle that moves, looks fine, and measures nothing (§4.3 #3).
+path            = "data/assets/sampling_table.v1.bin"
+format          = "packbits_msb_first"   # np.packbits default bit order
+packed_bytes    = 8192
+values          = 65536
+ones            = 32743                  # measured
+sha256_packed   = "5151fe795a218d1adf0b7fd707204de23867ef2653fdebb8c9ff28d93f6aa55b"
+sha256_unpacked = "a3e9e18ea34546849c5136cf9b06c7bfd03e50e601da14af47cd926f9e623a85"
+blake3_packed   = "d89a6eddd5e5e130284f57f1734712d29dd2b3543f126ab4f7cef9237042f1cd"
+blake3_unpacked = "db6fac16981fbdd4951314e0ffbbaea52d217e6d1633bc1842ad21514afdad84"
+
+[scoring]
+# The canonical scoring unit, locked down (§6.2): tokenizer(text,
+# add_special_tokens=False) on the PASSAGE TEXT ALONE. No BOS, no chat
+# template, no prompt. NEVER store a score computed over prompt+completion.
+add_special_tokens = false
+
+# THE eos MASK IS OFF, IN BOTH RUNTIMES, DELIBERATELY.
+#
+# `compute_eos_token_mask` zeroes the first `eos_token_id` AND EVERYTHING AFTER
+# IT. `add_special_tokens = false` still maps the literal five-character string
+# `<eos>` to id 1, so with the mask on, a player who types it near the start
+# masks every downstream row: n_scored collapses, sigma_null explodes, z falls
+# under the notch, and the gate clears a submission that laundered nothing.
+# The canonical scoring unit is the passage text alone and contains no eos
+# anyway (§6.2), so the mask can only ever fire on an exploit.
+#
+# These two keys are RECORDED, not read as a knob: launder_core.watermark.config
+# owns SCORING_EOS_MASK / SCORING_EOS_TOKEN_ID and `assert_scoring_eos` fails at
+# BOOT if this file disagrees with it. That assertion exists because the browser
+# once defaulted to 1 while the server defaulted to None and the same sentence
+# read z 1.971 and z 0.109.
+eos_mask           = false             # no eos mask in the shipped scoring path
+eos_token_id       = 1                 # Gemma-3's <eos>; only consulted if eos_mask = true
+
+detector           = "weighted_mean"   # `bayesian` is a drop-in behind the same Protocol, unused in v1
+weights            = "linspace_10_to_1" # w = linspace(10,1,m); w *= m/sum(w) so sum(w) == m
+index_mode         = "python_remainder" # ((h % N) + N) % N — the #1 silent divergence (§4.3 #1)
+int_width          = 64                 # two's complement wraparound after every add AND multiply
+
+[seeds]
+# §6.6. Artifact reproducibility is an enforced invariant; generation
+# reproducibility is best-effort provenance (bf16 GPU sampling is not
+# bit-reproducible across driver/torch versions, and chasing that wastes time).
+sampling_table  = 0            # NEVER change
+generation_base = 1723728123   # per-candidate seed = base + index
+solver          = 7
+
+[model]
+# Recorded here because the watermark is only meaningful against the tokenizer
+# that produced the ids. Changing the model is a full regeneration.
+id           = "google/gemma-3-4b-it"
+architecture = "Gemma3ForConditionalGeneration"
+tokenizer_blob = "data/assets/gemma3-tok.v1.bin.br"
+tokenizer_blob_bytes = 1192944
+tokenizer_blob_blake3 = "93b1631ca1acadb1a7bf3dd0b110e575b31fa25005c5fa5d8e6c29de29e62eb2"

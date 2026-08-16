@@ -1,0 +1,27 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p_2026-08-21",
+  "level_id": "L4",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Kiln firing is a complex and carefully controlled process used to transform clay objects from a pliable, soft state into durable, permanent ceramic forms. At its core, it involves subjecting clay to high temperatures within a specialized oven – the kiln – to permanently alter its physical and chemical properties. The initial stage, called “bisque firing,” typically occurs around 1830°F (1000°C). During this phase, the clay body dries and shrinks, becoming relatively hard and porous, resembling a fragile, grey stone. This bisque firing removes almost all the remaining water content and begins to fuse the clay particles together. Subsequent firing, known as “glaze firing,” elevates the temperature significantly, often reaching 2000°F (1100°C) or higher, depending on the glaze composition. This extreme heat melts the glaze material, creating a glassy, decorative surface that bonds strongly to the fired clay beneath. Throughout the entire firing process, variables like temperature, atmosphere (oxidation or reduction), and firing rate are meticulously monitored and adjusted by the potter or ceramic artist. These factors dramatically influence the color, texture, and overall appearance of the final piece, demanding a deep understanding of both the clay and the glaze materials to achieve the desired outcome.  Proper firing is absolutely essential to ensure the piece is strong, durable, and resistant to cracking or warping. \n\n---\n\nWould you like me to expand on a specific aspect of kiln firing, such as the different firing atmospheres, glaze composition, or control methods?",
+  "n_words": 239,
+  "detector": {
+    "expected_n_scored": 303,
+    "expected_score": 0.5273775653427412,
+    "expected_z": 5.02430879778071,
+    "g_digest": "blake3:4ad813d35db077b476272c586c6ca57edf9da61c227d090953a2f56e9ec25b54"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

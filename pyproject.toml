@@ -1,0 +1,159 @@
+##
+## Launder LM — uv workspace root.
+##
+## This file is NOT a distributable package. It exists to (a) declare the three
+## workspace members, (b) hold the dev dependency group shared by all of them,
+## and (c) own the single ruff / mypy / pytest configuration so `launder-core`
+## is linted and tested exactly once. See TECH_PLAN.md §2.1 and §3.
+##
+[project]
+name = "launder-wm"
+version = "0.1.0"
+description = "Launder LM — a static browser game with a receipt (workspace root)"
+requires-python = ">=3.12,<3.13"
+# Root depends on all three members so a bare `uv sync` gives one venv that can
+# run forge, serve and the whole test suite (TECH_PLAN.md §6.1). torch is NOT
+# pulled in by this: it lives behind launder-forge's `cpu` / `cuda` extras.
+dependencies = [
+    "launder-core",
+    "launder-serve",
+    "launder-forge",
+]
+
+# The torch extras live on `launder-forge`, but a member's extra is not
+# reachable from a root `uv sync`: `uv sync --extra cpu` fails with "Extra `cpu`
+# is not defined ... for `launder-wm`", and the working spelling
+# (`uv sync --package launder-forge --extra cpu`) narrows the venv to forge and
+# UNINSTALLS launder-serve, fastapi and pytest. Re-exporting them here is what
+# makes `make forge-cpu` / `make forge-gpu` mean "the one venv, plus torch".
+[project.optional-dependencies]
+cpu = ["launder-forge[cpu]"]
+cuda = ["launder-forge[cuda]"]
+
+[tool.uv]
+# The root is a workspace container, not a distributable.
+package = false
+# launder-forge's `cpu` and `cuda` extras both pin torch==2.13.0 but resolve it
+# from different indexes (PyPI CPU wheels vs. download.pytorch.org/whl/cu130).
+# They can never be installed together. See packages/forge/pyproject.toml.
+conflicts = [
+    [
+        { package = "launder-forge", extra = "cpu" },
+        { package = "launder-forge", extra = "cuda" },
+    ],
+    [
+        { package = "launder-wm", extra = "cpu" },
+        { package = "launder-wm", extra = "cuda" },
+    ],
+]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+# The workspace root pulls its members in as editable sources so `uv sync`
+# at the root gives a single venv that can run forge, serve and the tests.
+[tool.uv.sources]
+launder-core = { workspace = true }
+launder-serve = { workspace = true }
+launder-forge = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "hypothesis>=6",
+    "ruff>=0.9",
+    "mypy>=1.13",
+    # data/config/prompts/*.yaml is read by launder-forge; without the stubs
+    # `mypy packages/forge` fails on the import.
+    "types-PyYAML>=6",
+]
+
+# ---------------------------------------------------------------------------
+# ruff — one config, all three packages
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["packages/core/src", "packages/serve/src", "packages/forge/src"]
+# `*.md` IS NOT COSMETIC. ruff >= 0.13 formats Python code blocks embedded in
+# Markdown, so a bare `ruff format .` silently rewrites the ```python fences
+# inside TECH_PLAN.md and CONCEPT.md — reflowing the spec while you thought you
+# were formatting the source. Those two documents are the authority this repo is
+# built against; they are not ruff's to edit.
+extend-exclude = ["data", "web", "tools/reference", "*.md"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "RUF",  # ruff-specific
+    "TID",  # tidy imports
+]
+ignore = [
+    "E501",    # line length is ruff-format's job
+    "RUF012",  # ClassVar annotations on mutable defaults — noisy with Protocols
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"
+skip-magic-trailing-comma = false
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+no_implicit_reexport = false
+plugins = ["pydantic.mypy"]
+mypy_path = ["packages/core/src", "packages/serve/src", "packages/forge/src"]
+exclude = ["^data/", "^web/", "^tools/reference/"]
+
+[[tool.mypy.overrides]]
+# Wheels that ship no py.typed marker. `tokenizers` and `brotli` joined the list
+# when the SERVER learned to tokenize: /api/detect has to turn text into ids,
+# and it does that with the same Rust build that generated the golden vectors.
+module = [
+    "torch.*",
+    "transformers.*",
+    "sentencepiece.*",
+    "blake3.*",
+    "tokenizers.*",
+    "brotli.*",
+    "brotlicffi.*",
+]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+# One existing root rather than three per-package paths: pytest hard-errors on a
+# testpaths entry that does not exist, and packages/{serve,forge}/tests land in
+# later milestones. Discovery still finds every packages/*/tests/** file.
+testpaths = ["packages"]
+addopts = "-q --strict-markers --strict-config --import-mode=importlib"
+asyncio_mode = "auto"
+filterwarnings = ["error::DeprecationWarning:launder_.*"]
+markers = [
+    "gpu: requires a CUDA device (never runs in CI)",
+    "weights: requires local Gemma-3 weights (never runs in CI)",
+    "network: performs real network I/O (never runs in CI)",
+    "golden: reads data/golden — the same files vitest reads",
+]

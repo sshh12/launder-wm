@@ -1,0 +1,155 @@
+@layer state {
+  /* ---- screens ---------------------------------------------------------- */
+  .page[data-screen="intro"] .status,
+  .page[data-screen="intro"] .strip {
+    display: none;
+  }
+
+  /* ---- cleared ---------------------------------------------------------- */
+  .page[data-cleared="1"] .fill,
+  .page[data-cleared="1"] .notch,
+  .page[data-cleared="1"] .tri {
+    /* the two-state instrument agrees with itself; the needle stays ink */
+    background-color: var(--cold);
+  }
+  .page[data-cleared="1"] .tri {
+    background-color: transparent;
+    border-bottom-color: var(--cold);
+  }
+  .page[data-cleared="1"] .floorlbl {
+    color: var(--cold);
+  }
+
+  /* ---- typing compaction (§10.5) ---------------------------------------- *
+   * Design target: iPhone 390x844 with the keyboard open -> ~390x390 usable.
+   * The four things that NEVER collapse at any width are the needle, the
+   * threshold notch, the passage box and the live words-changed count. Those
+   * four are the game. Everything else folds. */
+  .page[data-typing="1"] .actions,
+  .page[data-typing="1"] .status {
+    display: none;
+  }
+  .page[data-typing="1"] .strip {
+    display: flex;
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    background: var(--bg);
+    border-top: 1px solid var(--rule);
+    padding-bottom: env(safe-area-inset-bottom);
+    height: calc(36px + env(safe-area-inset-bottom));
+  }
+  .page[data-typing="1"] .rail {
+    padding-top: 6px;
+  }
+  .page[data-typing="1"] .num {
+    font-size: 19px;
+    line-height: 20px;
+  }
+  .page[data-typing="1"] .gutrow {
+    height: 6px;
+  }
+  .page[data-typing="1"] .floorlbl,
+  .page[data-typing="1"] .scalerow,
+  .page[data-typing="1"] .whatbtn,
+  .page[data-typing="1"] .notice {
+    display: none;
+  }
+
+  /* ---- breakpoints, in em so they respect user zoom (§10.5) -------------- */
+  @media (min-width: 37.5em) {
+    :root {
+      --gut: 24px;
+    }
+    .passage,
+    .actions,
+    .status,
+    .strip {
+      max-width: 64ch;
+    }
+    .mirror,
+    .raw {
+      padding: 20px 22px;
+    }
+  }
+
+  @media (min-width: 56.25em) {
+    .stage {
+      display: grid;
+      grid-template-columns: minmax(42ch, 64ch) 264px;
+      gap: 40px;
+      align-items: start;
+    }
+    .side {
+      display: block;
+    }
+    .face {
+      height: 46px;
+    }
+    .actions {
+      position: static;
+      border-top: 0;
+    }
+    /* There is no keyboard eating the viewport here, so nothing compacts. */
+    .page[data-typing="1"] .actions,
+    .page[data-typing="1"] .status {
+      display: flex;
+    }
+    .page[data-typing="1"] .strip {
+      display: none;
+    }
+    .page[data-typing="1"] .notice:not([hidden]) {
+      display: flex;
+    }
+    .page[data-typing="1"] .scalerow,
+    .page[data-typing="1"] .floorlbl,
+    .page[data-typing="1"] .whatbtn {
+      display: block;
+    }
+    .page[data-typing="1"] .gutrow {
+      height: 13px;
+    }
+    .page[data-typing="1"] .num {
+      font-size: 26px;
+      line-height: 26px;
+    }
+    .sheet {
+      left: auto;
+      right: 24px;
+      bottom: 24px;
+      width: 440px;
+      border: 1px solid var(--rule);
+    }
+    .sheet[data-size="full"] {
+      top: 24px;
+      right: 24px;
+      left: auto;
+      width: 580px;
+    }
+  }
+
+  /* No breakpoint above 1200px (§10.5). */
+  @media (min-width: 75em) {
+    .stage {
+      grid-template-columns: minmax(42ch, 64ch) 264px;
+    }
+  }
+
+  /* Reduced motion removes MOTION, never information: heat and needle values
+     still update, they just snap (§10.4). */
+  @media (prefers-reduced-motion: reduce) {
+    .tk {
+      transition-duration: 1ms;
+      transition-delay: 0ms;
+    }
+    .needle,
+    .fill,
+    .peak,
+    .num {
+      transition-duration: 1ms;
+    }
+    .sheet[data-open="1"] {
+      animation: none;
+    }
+  }
+}

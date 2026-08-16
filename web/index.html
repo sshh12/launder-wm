@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- viewport-fit=cover for env(safe-area-inset-*); pinch zoom is never
+         disabled, at any width (§10.3). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Launder LM</title>
+    <script type="module" src="/src/main.ts"></script>
+
+    <!--
+      ============================================================
+      SERVER TEMPLATE CONTRACT — launder_serve
+      ============================================================
+      This file is the daily page. launder-serve rewrites exactly four
+      regions, each delimited by a comment pair or named below, and nothing
+      else:
+
+        1. LAUNDER:BOOT   the JSON payload below — the level, the detector
+                          expectation, the pristine reading, the primer's
+                          GENERATED demo, the intro's prefix_z, and
+                          data/config/copy.toml rendered to JSON. Escape
+                          `<` as <.
+        2. LAUNDER:TEXT   the passage, inside the textarea element.
+                          HTML-escape ampersand and less-than. THE FIRST
+                          CHARACTER MUST FOLLOW THE START TAG IMMEDIATELY: an
+                          HTML parser eats one newline directly after the
+                          start tag, and the player would silently begin from
+                          a different string than the one the server scored.
+        3. #face style    --init-x (px offset of the needle) and --init-n
+                          (0..1 fill), so the instrument reads the passage's
+                          expected_z before any network call and before any
+                          JS (§5.4 step 1).
+        4. #num text      the same expected_z, formatted to 2dp, and
+                          #stateword's data-copy flipped to readout.below
+                          when the passage already sits under z*.
+
+      Everything else is filled from the boot payload by main.ts:
+      [data-copy] sets textContent, [data-copy-aria] sets aria-label, and
+      [data-copy-opt] does the same but REMOVES the element when the key is
+      absent — no player-facing string is ever written in TypeScript
+      (§10.7).
+
+      The checked-in values are the dev fixture: the real passage from
+      data/dev/passage.txt and the real strings from data/config/copy.toml,
+      with dev:true, no reading and expected_z 0 — because a reading is a
+      detector output and this repo will not ship an invented one.
+      web/tests/boot.test.ts fails if the inlined copy drifts from
+      data/config/copy.toml.
+    -->
+    <!-- LAUNDER:BOOT -->
+    <script type="application/json" id="launder-boot">
+{
+"schema": "launder.boot/1",
+"dev": true,
+"day": "2026-09-01",
+"puzzle_number": 212,
+"passage_id": "p_dev",
+"level": {
+"id": "L2",
+"name": "Budget",
+"teaches": "placement — cut upstream of a hot run",
+"checks": [
+{
+"check": "unicode_sanitation",
+"params": {
+"reject_categories": [
+"zero_width",
+"soft_hyphen",
+"bidi_control",
+"variation_selector",
+"private_use"
+],
+"homoglyph_policy": "reject_unless_in_original",
+"max_combining_marks": 2
+}
+},
+{
+"check": "word_floor",
+"params": {
+"min_words": 50
+}
+},
+{
+"check": "edit_budget",
+"params": {
+"max_word_distance": 12
+}
+},
+{
+"check": "detector_threshold",
+"params": {
+"max_z": 0.0
+}
+},
+{
+"check": "llm_gate",
+"params": {
+"require_claims": "required_only",
+"max_missing_claims": 0,
+"max_added_claims": 1
+}
+}
+]
+},
+"par": 4,
+"asset_bundle_id": "",
+"wm_config_id": "",
+"detector": {
+"z_star": 2.3263,
+"expected_z": 0.0,
+"scale": {
+"min": -2,
+"max": 10
+}
+},
+"reading": null,
+"primer_demo": null,
+"intro": null,
+"assets": null,
+"copy": {
+"primer": {
+"lede_1": "This text is watermarked.",
+"body_1": "When an AI writes, many words would fit in each spot. A watermark makes it choose them in a secret pattern. The text reads normally, but a detector that knows the pattern can find it.",
+"demo": "The committee met on Thursday to consider whether the proposal deserved another year of funding.",
+"cap": "The stain is strongest where many words could have fit — not where words look clever.",
+"lede_2": "Your job: wash it out.",
+"body_2": "Move the needle below the line. Use as few word changes as you can. The text must still read well and mean the same.",
+"open_label": "What is this?",
+"close_label": "Start"
+},
+"readout": {
+"above": "AI detected",
+"below": "Not detected",
+"threshold_label": "Under {z_star_display} to clear",
+"meter_name": "Watermark evidence",
+"valuetext_above": "{z_display}, above the line",
+"valuetext_below": "{z_display}, below the line",
+"distance_label": "{distance} changed",
+"distance_zero": "nothing changed",
+"cleared_toast": "Cleared in {distance}",
+"provisional_note": "Gate unavailable — this one does not count.",
+"share_template": "Launder #{puzzle_number} — cleared in {distance} 🧼"
+},
+"screen": {
+"action": "Check",
+"rollover_note": "New passage at midnight UTC"
+},
+"check": {
+"unicode_sanitation": {
+"label": "Real characters",
+"blurb": "Every character has to be one a reader can see. Invisible spacers, hidden joiners, and letters from other alphabets that look like English ones do not count as edits — they change what the detector reads without changing what you read. Paste from a word processor and a few can arrive without you noticing.",
+"reject": "This does not read like a person wrote it — {count} invisible or lookalike characters were added.",
+"fix_label": "Clean it for me",
+"fix_note": "This applies the same change as an ordinary edit. It costs ordinary distance."
+},
+"word_floor": {
+"label": "At least {min_words} words",
+"blurb": "The text has to stay about this long. Deleting your way to a short passage is not laundering — a short text carries too little evidence for the detector either way, so the puzzle would solve itself.",
+"reject": "Too short: {n_words} words, and this level needs {min_words}."
+},
+"edit_budget": {
+"label": "Budget {max_word_distance} words",
+"blurb": "You may change only this many words. A changed word, a deleted word, an added word, and a pair of swapped words each count as one. Fewer is better on every level; here it is also the rule.",
+"reject": "You changed {distance} words. This level allows {max_word_distance}."
+},
+"locked_phrase": {
+"label": "Verbatim phrase",
+"blurb": "One phrase must stay exactly as it is — same words, same order, same punctuation. You are quoting a source, so you work around it. The phrase carries watermark signal you cannot touch, which is the point.",
+"reject": "The phrase \"{phrase}\" is no longer in the text, exactly as written."
+},
+"close_paraphrase": {
+"label": "Close rewrite only",
+"blurb": "This level wants surgery, not a rewrite. Keep most of the original's key words, keep the sentences roughly where they are, and keep the length close. Swapping the whole vocabulary lowers the reading, but it is not the skill this level is about.",
+"reject": "Too free — this level wants surgery, not a rewrite ({content_word_retention_pct}% of key words kept, needs {min_content_word_retention_pct}%).",
+"reject_length": "Too far from the original's length ({length_ratio_pct}%, allowed {length_ratio_min_pct}–{length_ratio_max_pct}%).",
+"reject_sentences": "You restructured the sentences. This level allows a difference of {max_sentence_count_delta}.",
+"reject_distance": "Too many words changed for this level ({word_distance_ratio_pct}% of the passage, allowed {max_word_distance_ratio_pct}%).",
+"reject_alignment": "One of the original sentences has no counterpart left — this level wants them edited in place, not merged or split ({sentence_alignment_pct}% matched, needs {min_sentence_alignment_pct}%)."
+},
+"unit_test": {
+"label": "Tests pass",
+"blurb": "The code still has to work. It runs against a fixed set of tests, and every one of them has to pass. Code is a terrible place to hide a watermark, because there is almost no room to say the same thing a different way — that is what this level is showing you.",
+"reject": "Test failed: {test_name}.",
+"reject_timeout": "The code did not finish in {timeout_ms} ms."
+},
+"detector_threshold": {
+"label": "Under the line",
+"blurb": "This is the win condition. The needle shows how much watermark evidence the detector finds. It has to sit at or below the line when you check. The reading you see while typing is the same one used here.",
+"reject": "Still detected. The needle reads {z_display} and has to reach {z_target_display}."
+},
+"llm_gate": {
+"label": "Reads well, means the same",
+"blurb": "A second model reads your text and reports what it sees: whether a person could read it, and whether it still says what the original said. It does not score style. Plainer, blunter, shorter and simpler all pass. It never takes instructions from your text.",
+"reject": "This did not pass the reading check.",
+"reject_by_code": {
+"meaning_drift": "Meaning drifted — you dropped the claim about {claim_label}.",
+"meaning_inverted": "Meaning flipped — the original says {claim_label}, yours doesn't.",
+"meaning_added": "You added something the original never says: \"{added}\".",
+"injection_attempt": "Nice try. The judge reads your text, it doesn't take orders from it."
+},
+"reject_by_unnatural_kind": {
+"word_salad": "That isn't readable prose — a human has to be able to read it.",
+"keyword_soup": "The words survived but the sentences didn't.",
+"repetition": "You're padding with repeated text.",
+"non_prose_content": "There's something in here that isn't part of the writing.",
+"not_english": "This isn't readable English."
+}
+}
+},
+"gate": {
+"pending_label": "Not checked yet",
+"pass_label": "Passed",
+"fail_label": "Failed",
+"error_label": "Could not check",
+"disclosure_hint": "Tap a rule to see what it means",
+"checklist_title": "This level's rules"
+},
+"errors": {
+"network": "No connection. Your text is safe; try Check again.",
+"rate_limited": "Too many checks. Try again in {retry_after_s} seconds.",
+"too_long": "That text is too long to check.",
+"unknown_passage": "That passage is not the one running today.",
+"detector_offline": "The needle is reading from the server right now.",
+"detector_mismatch": "This build's detector does not match this passage. Reading from the server instead."
+},
+"intro": {
+"slider_label": "Length",
+"beat_1": "More text, more evidence.",
+"beat_2": "You can't just delete your essay.",
+"hand_off": "Now wash one out."
+},
+"disclosure": {
+"l6_regen": "These four texts were generated ahead of time on the author's RTX 5090 — Railway has no GPU. The generation is real; the detector reading you're watching is live, right now, in your browser, with the same key that flagged every other level.",
+"keys_published": "The keys are published. That makes this watermark real, not secure — you can check every number here yourself."
+}
+}
+}
+</script>
+    <!-- /LAUNDER:BOOT -->
+  </head>
+
+  <body class="page" data-screen="play" data-typing="0" data-cleared="0">
+    <main class="app" id="app">
+      <!-- ============ the instrument: read, never touched (§10.5) ============ -->
+      <div class="rail" id="rail">
+        <div class="notice" id="notice" hidden>
+          <span class="ndot"></span><span id="noticetxt"></span>
+        </div>
+
+        <div class="railhead">
+          <span class="daily" id="daily"></span>
+          <button class="whatbtn" id="whatbtn" type="button" data-copy-aria="primer.open_label">
+            ?
+          </button>
+          <span class="lvlchip" id="lvlchip"><em id="lvlid"></em> <span id="lvlname"></span></span>
+          <div class="readout">
+            <span class="num" id="num" data-pending="1">0.00</span>
+            <span class="stateword" id="stateword" data-copy="readout.above"></span>
+          </div>
+        </div>
+
+        <div
+          class="meter"
+          id="meter"
+          role="meter"
+          aria-valuemin="-2"
+          aria-valuemax="10"
+          aria-valuenow="0"
+          data-copy-aria="readout.meter_name"
+        >
+          <div class="face" id="face" style="--init-x: 0px; --init-n: 0">
+            <div class="track"></div>
+            <div class="fill" id="fill"></div>
+            <div class="notch" id="notch"></div>
+            <div class="sweep" id="sweep"></div>
+            <div class="peak" id="peak" data-snap="1"></div>
+            <div class="needle" id="needle"></div>
+          </div>
+          <div class="scalerow" id="scalerow"></div>
+          <div class="gutrow">
+            <div class="tri" id="tri"></div>
+            <div class="floorlbl" id="floorlbl"></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="sr" id="live" aria-live="polite"></p>
+
+      <div class="stage">
+        <div>
+          <!-- ============ intro: the length slider (§10.1) ============ -->
+          <div class="introwrap" id="introwrap" hidden>
+            <p class="introline" id="introline"></p>
+            <div class="passage" id="passageIntro">
+              <div class="mirror" id="mirrorIntro" data-visible="1"></div>
+            </div>
+            <div class="sliderwrap">
+              <input class="slider" id="slider" type="range" min="1" max="2" value="1" />
+              <div class="slidescale" id="slidescale"></div>
+              <div class="wordcount" id="wordcount"></div>
+            </div>
+            <div class="actions">
+              <button class="btn" id="begin" type="button"></button>
+            </div>
+          </div>
+
+          <!-- ============ play ============ -->
+          <div class="playwrap" id="playwrap">
+            <!--
+              Variant 1 (§10.3): the mirror is IN FLOW and defines the height;
+              the textarea is absolutely positioned and stretched to it. They
+              cannot disagree, because only one of them has an opinion.
+              autocorrect / autocapitalize / spellcheck are off because smart
+              quotes, em-dash substitution and auto-capitalisation silently
+              change tokenisation — therefore g-values, therefore the needle
+              and the score — WITHOUT the player doing anything. The cost is
+              the QuickType bar on some iOS versions; determinism wins in a
+              scoring game, and we mention it nowhere in the UI.
+            -->
+            <div class="passage" id="passage" data-kind="prose">
+              <div class="mirror" id="mirror" aria-hidden="true" data-heat="pending"></div>
+              <!-- LAUNDER:TEXT --><textarea
+                class="raw"
+                id="raw"
+                autocorrect="off"
+                autocapitalize="off"
+                autocomplete="off"
+                spellcheck="false"
+                enterkeyhint="enter"
+                inputmode="text"
+                aria-labelledby="lvlchip"
+                data-copy-aria-opt="screen.passage_label"
+              >The committee's report, released late Tuesday, argues that the current framework for evaluating municipal infrastructure grants has drifted well beyond its original purpose. What began as a narrow mechanism for distributing federal repair funds to distressed counties has, over fifteen years, accumulated a thicket of eligibility criteria that few applicants can navigate without professional assistance. The authors note, with some understatement, that the median application now runs to four hundred pages. They recommend consolidating the seven existing programs into two, and shifting the burden of demonstrating need from the applicant to the administering agency, which already holds most of the relevant data. Critics of the proposal argue that such consolidation would strip away protections for the smallest jurisdictions, whose circumstances rarely fit standard templates. The committee acknowledges the concern but contends that the status quo already fails those communities, simply less visibly.</textarea
+              ><!-- /LAUNDER:TEXT -->
+            </div>
+
+            <div class="status">
+              <button class="pips" id="pips" type="button"></button>
+              <span class="parline" id="parline"></span>
+              <span class="changed" id="changed"></span>
+            </div>
+
+            <!-- keyboard-open compaction: a 34px status strip, no submit path -->
+            <div class="strip" id="strip">
+              <span class="changed" id="stripcount"></span>
+              <button class="pips" id="pipsStrip" type="button"></button>
+            </div>
+
+            <div class="actions" id="actions">
+              <button class="btn" id="check" type="button" data-copy="screen.action"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- desktop rail, >= 56.25em only -->
+        <aside class="side">
+          <div class="lbl" data-copy="gate.checklist_title"></div>
+          <div class="checks" id="sidechecks"></div>
+        </aside>
+      </div>
+
+      <div class="foot" data-copy="screen.rollover_note"></div>
+    </main>
+
+    <div class="scrim" id="scrim" data-open="0"></div>
+
+    <!-- ============ the primer: once on first land, then only from ? ======= -->
+    <div
+      class="sheet"
+      id="primersheet"
+      data-open="0"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="prt"
+    >
+      <div class="sheetin">
+        <div class="sheethead">
+          <span class="sheettitle" id="prt">Launder LM</span>
+          <button class="x" type="button" data-close data-copy-aria-opt="screen.close_label">
+            ×
+          </button>
+        </div>
+
+        <p class="pr-lede" data-copy="primer.lede_1"></p>
+        <p class="pr-body" data-copy="primer.body_1"></p>
+
+        <!-- The stain is GENERATED by the production detector over the real
+             key. With no reading in the boot payload this renders unstained
+             rather than inventing one (§10.7). -->
+        <div class="pr-demo"><div class="mirror" id="mirrorPrimer" data-visible="1"></div></div>
+        <p class="pr-cap" data-copy="primer.cap"></p>
+
+        <p class="pr-lede" data-copy="primer.lede_2"></p>
+        <p class="pr-body" data-copy="primer.body_2"></p>
+
+        <div class="pr-foot">
+          <span class="pr-daily" data-copy="screen.rollover_note"></span>
+          <button class="btn" id="prplay" type="button" data-copy="primer.close_label"></button>
+        </div>
+        <p class="pr-cap" data-copy="disclosure.keys_published"></p>
+      </div>
+    </div>
+
+    <!-- ============ gate outcome: a sheet, never a toast (§10.5) =========== -->
+    <div
+      class="sheet"
+      id="gatesheet"
+      data-open="0"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="gv"
+    >
+      <div class="sheetin">
+        <div class="sheethead">
+          <span class="sheettitle" data-copy="gate.checklist_title"></span>
+          <button class="x" type="button" data-close data-copy-aria-opt="screen.close_label">
+            ×
+          </button>
+        </div>
+        <div class="verdict" id="gv" data-v="fail"></div>
+        <p class="reason" id="greason"></p>
+        <p class="note" id="gnote" hidden></p>
+        <div class="checks" id="gatechecks"></div>
+      </div>
+    </div>
+
+    <!-- ============ this level's rules ==================================== -->
+    <div
+      class="sheet"
+      id="checksheet"
+      data-open="0"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cst"
+    >
+      <div class="sheetin">
+        <div class="sheethead">
+          <span class="sheettitle" id="cst" data-copy="gate.checklist_title"></span>
+          <button class="x" type="button" data-close data-copy-aria-opt="screen.close_label">
+            ×
+          </button>
+        </div>
+        <div class="lbl" id="checkhint"></div>
+        <div class="checks" id="listchecks"></div>
+      </div>
+    </div>
+
+    <!-- ============ the result: a sewn-in care label ====================== -->
+    <div
+      class="sheet"
+      data-size="full"
+      id="resultsheet"
+      data-open="0"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rtop"
+    >
+      <div class="sheetin">
+        <div class="sheethead">
+          <span class="sheettitle" id="rt"></span>
+          <button class="x" type="button" data-close data-copy-aria-opt="screen.close_label">
+            ×
+          </button>
+        </div>
+        <div class="label">
+          <div class="label-top" id="rtop"></div>
+          <div class="label-big" id="rbig"></div>
+          <div class="label-sub" id="rsub"></div>
+          <div class="label-syms" id="rsyms"></div>
+        </div>
+        <div class="lbl" data-copy-opt="screen.diff_label"></div>
+        <div class="diff" id="rdiff"></div>
+        <div class="sharebox" id="rshare"></div>
+        <div class="actions">
+          <button class="btn" id="copyres" type="button" data-copy-opt="screen.copy_label"></button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

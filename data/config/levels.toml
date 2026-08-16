@@ -1,0 +1,121 @@
+# data/config/levels.toml — TECH_PLAN.md §7.6
+#
+# The six levels as ORDERED CHECK LISTS. Order is the semantics: every
+# deterministic check runs before `llm_gate`, so a submission that busts the
+# budget, the floor, the locked phrase, the unit test or unicode sanitation
+# costs zero API calls. `detector_threshold` sitting second-to-last is the
+# single largest cost saver — only submissions that already beat the watermark
+# ever reach the LLM.
+#
+# `load_levels()` raises at BOOT on an unknown check name, never at play.
+#
+# NOTE ON SPELLING: TECH_PLAN.md §7.6 renders each level's scalars on one line
+# separated by semicolons. TOML has no statement separator, so that spelling is
+# not parseable; the content below is identical, one key per line.
+
+schema        = "launder.levels/1"
+judge_version = "g3"
+
+# --- defaults, merged UNDER each level's own params -------------------------
+[defaults.unicode_sanitation]
+# Rejects rather than silently strips. Stripping would let the exploit succeed
+# at the detector while the judge sees clean text (§7.2). The UI offers a
+# "clean it for me" button that applies the same normalization visibly, as an
+# ordinary edit costing ordinary distance.
+reject_categories   = ["zero_width", "soft_hyphen", "bidi_control", "control_char", "variation_selector", "private_use"]
+homoglyph_policy    = "reject_unless_in_original"
+max_combining_marks = 2
+
+[defaults.word_floor]
+min_words = 50
+
+[defaults.detector_threshold]
+max_z = 0.0        # z relative to the notch: "at or below z*"
+
+# ---------------------------------------------------------------------------
+[[levels]]
+id         = "L1"
+name       = "Clean it"
+teaches    = "the loop, the ripple"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation" },
+  { check = "word_floor" },
+  { check = "detector_threshold" },
+  { check = "llm_gate", params = { require_claims = "required_only", max_missing_claims = 0, max_added_claims = 1 } },
+]
+
+# ---------------------------------------------------------------------------
+[[levels]]
+id         = "L2"
+name       = "Budget"
+teaches    = "placement — cut upstream of a hot run"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation" },
+  { check = "word_floor" },
+  { check = "edit_budget", params = { max_word_distance = 12 } },
+  { check = "detector_threshold" },
+  { check = "llm_gate", params = { require_claims = "required_only", max_missing_claims = 0, max_added_claims = 1 } },
+]
+
+# ---------------------------------------------------------------------------
+[[levels]]
+id         = "L3"
+name       = "Locked"
+teaches    = "launder around fixed signal"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation" },
+  { check = "word_floor" },
+  { check = "locked_phrase", params = { phrase_ref = "passage.rules.locked_phrases", match = "whitespace_insensitive" } },
+  { check = "edit_budget", params = { max_word_distance = 18 } },
+  { check = "detector_threshold" },
+  { check = "llm_gate", params = { require_claims = "required_only", max_missing_claims = 0, max_added_claims = 1 } },
+]
+
+# ---------------------------------------------------------------------------
+[[levels]]
+id         = "L4"
+name       = "Tight fence"
+teaches    = "surgical, faithful edits"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation" },
+  { check = "word_floor" },
+  { check = "close_paraphrase", params = { min_content_word_retention = 0.55, max_word_distance_ratio = 0.45, length_ratio = [0.80, 1.25], max_sentence_count_delta = 1, min_sentence_alignment = 0.40 } },
+  { check = "detector_threshold" },
+  { check = "llm_gate", params = { require_claims = "all", max_missing_claims = 0, max_added_claims = 0 } },
+]
+
+# ---------------------------------------------------------------------------
+# DEVIATION FROM CONCEPT.md #2 (§7.6): L5 drops `llm_gate`. CONCEPT.md's table
+# says each level ADDS a check; L5 adds `unit_test` and removes `llm_gate`. The
+# unit test is a strictly stronger meaning check for code, and asking a
+# prose-naturalness judge about Python produces noise. L5 also gets its own
+# calibration bucket: code has far fewer scored tokens and far lower
+# optionality, so its sigma(T) curve and par must be fit separately.
+[[levels]]
+id         = "L5"
+name       = "Code"
+teaches    = "why code is a terrible host"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation", params = { homoglyph_policy = "reject_always" } },
+  { check = "word_floor", params = { min_words = 0 } },
+  { check = "unit_test", params = { suite_ref = "passage.rules.unit_test_id", timeout_ms = 2000, memory_mb = 64 } },
+  { check = "detector_threshold", params = { max_z = 0.0, calibration = "code" } },
+]
+
+# ---------------------------------------------------------------------------
+[[levels]]
+id         = "L6"
+name       = "Regenerate locally"
+teaches    = "control the sampler"
+par_source = "authored"
+checks = [
+  { check = "unicode_sanitation" },
+  { check = "word_floor", params = { min_words = 120 } },
+  { check = "detector_threshold" },
+  { check = "llm_gate", params = { require_claims = "required_only", max_missing_claims = 0, max_added_claims = 1 } },
+]

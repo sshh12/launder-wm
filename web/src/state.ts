@@ -1,0 +1,461 @@
+/**
+ * The single store — TECH_PLAN.md §10.2.
+ *
+ * This module owns the `SERVER -> LOADING -> LOCAL` handover and the one
+ * reconciliation rule that makes it invisible. It NEVER touches the DOM
+ * (§10.1); every view subscribes.
+ *
+ * The rule, enforced in exactly one place (`applyReading`):
+ *
+ *     apply a Reading only if reading.seq >= state.lastSeq
+ *     AND reading.textHash === sha256(state.text)
+ *
+ * Everything else is discarded silently. That single line kills needle flicker
+ * from out-of-order server responses, from stale worker results, and from the
+ * SERVER->LOCAL handover simultaneously — out-of-order responses are the #1
+ * source of flicker (§5.4 step 2).
+ *
+ * The hash comparison has a belt-and-braces companion: every caller passes the
+ * exact text the reading was computed for, and an exact string comparison runs
+ * first. crypto.subtle is unavailable in insecure contexts (plain-http LAN
+ * testing on a phone, which is exactly when you want the game to work), so the
+ * hash arm degrades to "not yet known" rather than to "reject everything".
+ */
+
+/* ------------------------------------------------------------------ *
+ * Wire shapes. These mirror launder_core.schemas.api one for one; the
+ * local detector emits the same DetectResponse shape, which is why one
+ * renderer serves both paths and the handover is a no-op in the view
+ * layer (§5.4, §9.2).
+ * ------------------------------------------------------------------ */
+
+export interface TokenHeatWire {
+  s: number;
+  e: number;
+  heat: number;
+  masked?: boolean;
+}
+
+export interface DetectResponseWire {
+  seq: number;
+  text_hash: string;
+  score: number;
+  z: number;
+  z_star: number;
+  n_scored: number;
+  n_tokens: number;
+  tokens: TokenHeatWire[];
+  preview_distance: number;
+}
+
+export type CheckStatus = "pass" | "fail" | "error";
+
+export interface CheckResultWire {
+  status: CheckStatus;
+  check: string;
+  code?: string | null;
+  params?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
+}
+
+export interface GateFailureWire {
+  check: string;
+  code: string;
+  message: string;
+  params?: Record<string, unknown>;
+  notes?: string;
+}
+
+export interface EditOpWire {
+  op: "sub" | "ins" | "del" | "transpose";
+  i: number;
+  j: number;
+  from: string;
+  to: string;
+}
+
+export interface SubmitResponseWire {
+  cleared: boolean;
+  provisional: boolean;
+  score: { distance: number; ops: EditOpWire[] };
+  detector: { score: number; z: number; z_star: number; n_scored: number; masked_fraction?: number };
+  failure?: GateFailureWire | null;
+  trace: CheckResultWire[];
+  par?: number | null;
+  rank_today?: number | null;
+  streak?: number | null;
+  share?: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Boot payload — inlined into index.html by launder-serve (§9.1: "the
+ * index HTML for the daily inlines the passage JSON, so a first-time
+ * player makes zero API calls before playing").
+ * ------------------------------------------------------------------ */
+
+export interface CopyTree {
+  [key: string]: string | CopyTree;
+}
+
+export interface CheckSpecWire {
+  check: string;
+  params?: Record<string, unknown>;
+}
+
+export interface LevelWire {
+  id: string;
+  name: string;
+  teaches?: string;
+  checks: CheckSpecWire[];
+}
+
+export interface ScaleWire {
+  min: number;
+  max: number;
+}
+
+export interface DetectorWire {
+  z_star: number;
+  expected_z: number;
+  scale: ScaleWire;
+}
+
+export interface IntroWire {
+  /** cumulative prefix z of a REAL passage — the slider is an instrument
+   *  reading, not a cartoon (launder_core.schemas.passage.IntroConfig). */
+  prefix_z: number[];
+  /** word count each prefix_z entry describes; aligns 1:1 when present. */
+  word_index: number[];
+}
+
+export interface DemoWire {
+  text: string;
+  tokens: TokenHeatWire[];
+}
+
+/** URLs for the local detector's assets. Absent (or null) means this build has
+ *  no local detector and the game stays in SERVER mode — which is M2, and is a
+ *  complete, shippable product (§5.4 step 5). */
+export interface AssetsWire {
+  /** the packed Gemma-3 tokenizer blob; served with Content-Encoding: br so the
+   *  browser inflates it and the worker receives raw bytes */
+  tokenizer_url: string;
+  /** the 8,192-byte packed sampling table — key material, §4.3 */
+  sampling_table_url: string;
+  /** thresholds.v1.json; omitted falls back to the built-in curve */
+  calibration_url?: string;
+}
+
+export interface Boot {
+  schema: string;
+  /** true in the checked-in file; launder-serve replaces the block. */
+  dev: boolean;
+  day: string;
+  puzzle_number: number;
+  passage_id: string;
+  level: LevelWire;
+  par: number | null;
+  asset_bundle_id: string;
+  wm_config_id: string;
+  detector: DetectorWire;
+  /** the reading for the pristine passage, if the server computed one */
+  reading: DetectResponseWire | null;
+  /** the primer's stained sentence — GENERATED by the real detector, never
+   *  hand-painted (§10.7). null means the primer shows the sentence unstained
+   *  rather than showing an invented stain. */
+  primer_demo: DemoWire | null;
+  intro: IntroWire | null;
+  assets: AssetsWire | null;
+  copy: CopyTree;
+}
+
+/* ------------------------------------------------------------------ *
+ * Reading
+ * ------------------------------------------------------------------ */
+
+export interface TokenHeat {
+  s: number;
+  e: number;
+  heat: number;
+  masked: boolean;
+}
+
+/** Never partially applied (§10.2). */
+export interface Reading {
+  textHash: string;
+  seq: number;
+  z: number;
+  zStar: number;
+  score: number;
+  nScored: number;
+  nTokens: number;
+  tokens: TokenHeat[];
+  previewDistance: number;
+}
+
+export function readingFromWire(w: DetectResponseWire): Reading {
+  return {
+    textHash: w.text_hash,
+    seq: w.seq,
+    z: w.z,
+    zStar: w.z_star,
+    score: w.score,
+    nScored: w.n_scored,
+    nTokens: w.n_tokens,
+    previewDistance: w.preview_distance,
+    tokens: w.tokens.map((t) => ({
+      s: t.s,
+      e: t.e,
+      heat: t.heat,
+      masked: t.masked === true,
+    })),
+  };
+}
+
+export type DetectorMode = "SERVER" | "LOADING" | "LOCAL";
+
+export type Change = "text" | "reading" | "mode" | "submitting" | "outcome";
+
+export interface State {
+  mode: DetectorMode;
+  /** the source of truth for everything */
+  text: string;
+  /** what the UI currently shows */
+  applied: Reading | null;
+  lastSeq: number;
+  submitting: boolean;
+  outcome: SubmitResponseWire | null;
+}
+
+export type Listener = (state: Readonly<State>, change: Change) => void;
+
+const SHA_PREFIX = "sha256:";
+
+/** `sha256:<64 hex>`, matching launder_core.schemas.watermark.Sha256Digest. */
+export async function sha256Hex(text: string): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null; // insecure context: the exact-text arm carries it
+  const bytes = new TextEncoder().encode(text);
+  const digest = await subtle.digest("SHA-256", bytes);
+  let out = "";
+  for (const b of new Uint8Array(digest)) out += b.toString(16).padStart(2, "0");
+  return SHA_PREFIX + out;
+}
+
+/**
+ * True when `crypto.subtle` exists at all. FALSE is a real deployment: plain
+ * http on a LAN address is an insecure context, which is exactly when you are
+ * testing on a phone. There the hash arm cannot run and the exact-text arm
+ * carries the rule alone — but "the digest has not landed yet" and "this
+ * browser has no digest" are DIFFERENT states and the guard must not confuse
+ * them, which is what it used to do.
+ */
+const HASH_CAPABLE = Boolean(globalThis.crypto?.subtle);
+
+export class Store {
+  private state: State;
+  private listeners: Listener[] = [];
+  private seq = 0;
+  /** sha256 of state.text, or null until the async digest lands. */
+  private textHash: string | null = null;
+  /** resolves when the digest for the CURRENT text has landed (or cannot). */
+  private hashed: Promise<void>;
+  /** the text `applied` describes; the exact-string arm of the guard. */
+  private appliedText: string | null = null;
+
+  constructor(initialText: string) {
+    this.state = {
+      mode: "SERVER",
+      text: initialText,
+      applied: null,
+      lastSeq: 0,
+      submitting: false,
+      outcome: null,
+    };
+    this.hashed = this.refreshHash(initialText);
+  }
+
+  get(): Readonly<State> {
+    return this.state;
+  }
+
+  /**
+   * Resolves once the digest for the text as of the last `setText` has landed.
+   *
+   * Exported for tests, which otherwise race a `setTimeout(0)` against
+   * `crypto.subtle.digest` — a genuinely async, thread-pool-backed call that can
+   * and does resolve after a macrotask under load.
+   */
+  hashSettled(): Promise<void> {
+    return this.hashed;
+  }
+
+  /** True when the displayed reading does not describe the current text. */
+  isStale(): boolean {
+    return this.state.applied === null || this.appliedText !== this.state.text;
+  }
+
+  subscribe(fn: Listener): () => void {
+    this.listeners.push(fn);
+    return () => {
+      const i = this.listeners.indexOf(fn);
+      if (i >= 0) this.listeners.splice(i, 1);
+    };
+  }
+
+  private emit(change: Change): void {
+    for (const fn of this.listeners.slice()) fn(this.state, change);
+  }
+
+  private async refreshHash(text: string): Promise<void> {
+    const h = await sha256Hex(text);
+    // A keystroke may have landed while we were hashing; only the current
+    // text's hash is allowed to be installed.
+    if (this.state.text === text) this.textHash = h;
+  }
+
+  nextSeq(): number {
+    this.seq += 1;
+    return this.seq;
+  }
+
+  setText(text: string): void {
+    if (text === this.state.text) return;
+    this.state.text = text;
+    this.textHash = null;
+    this.hashed = this.refreshHash(text);
+    // A submission describes a text that no longer exists.
+    if (this.state.outcome !== null) {
+      this.state.outcome = null;
+      this.emit("outcome");
+    }
+    this.emit("text");
+  }
+
+  setMode(mode: DetectorMode): void {
+    if (mode === this.state.mode) return;
+    this.state.mode = mode;
+    this.emit("mode");
+  }
+
+  setSubmitting(on: boolean): void {
+    if (on === this.state.submitting) return;
+    this.state.submitting = on;
+    this.emit("submitting");
+  }
+
+  setOutcome(outcome: SubmitResponseWire | null): void {
+    this.state.outcome = outcome;
+    this.emit("outcome");
+  }
+
+  /**
+   * THE reconciliation rule (§10.2). Returns true if the reading was applied.
+   *
+   * The rule needs PROOF that the reading describes the current text, and there
+   * are exactly two admissible proofs:
+   *
+   *   a. `sourceText` — the exact string the reading was computed for. Stronger
+   *      than a digest, and both production callers have it.
+   *   b. `reading.textHash === sha256(state.text)`.
+   *
+   * With neither, the reading is DROPPED. It used to be applied: the hash arm
+   * was skipped whenever `this.textHash === null`, which is the entire async
+   * window after every keystroke, so a caller that omitted `sourceText` — and
+   * `main.ts` does exactly that whenever the worker returns a seq absent from
+   * its map — could install a reading for superseded text, after which
+   * `isStale()` reported false because `appliedText` fell back to the current
+   * text. The guard's correctness rested on an optional argument.
+   *
+   * @param reading    a complete reading; never applied partially
+   * @param sourceText the exact text the reading was computed for, when the
+   *                   caller knows it (net/detect.ts and the worker both do)
+   */
+  applyReading(reading: Reading, sourceText?: string): boolean {
+    if (reading.seq < this.state.lastSeq) return false;
+    if (sourceText !== undefined && sourceText !== this.state.text) return false;
+    if (this.textHash !== null && reading.textHash !== "" && reading.textHash !== this.textHash) {
+      return false;
+    }
+    if (sourceText === undefined && this.textHash === null && HASH_CAPABLE) {
+      // Hash-capable but the digest for the current text is still in flight:
+      // neither proof is available, so there is nothing to check the reading
+      // against. Drop it rather than trust it.
+      return false;
+    }
+    this.state.applied = reading;
+    this.state.lastSeq = reading.seq;
+    this.appliedText = sourceText ?? this.state.text;
+    this.emit("reading");
+    return true;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Copy. Every player-facing string lives in data/config/copy.toml and
+ * arrives in the boot payload (§10.7). NOTHING in web/src/ may hold a
+ * player-facing string.
+ * ------------------------------------------------------------------ */
+
+export type CopyParams = Record<string, string | number | undefined>;
+
+function lookup(copy: CopyTree, path: string): string | null {
+  let node: string | CopyTree | undefined = copy;
+  for (const part of path.split(".")) {
+    if (typeof node !== "object" || node === null) return null;
+    node = node[part];
+  }
+  return typeof node === "string" ? node : null;
+}
+
+/**
+ * Render a copy template. An unresolved `{placeholder}` is left visible and
+ * logged rather than silently blanked — a renamed param quietly emptying a
+ * rejection message is exactly the bug `forge lint-copy` rule 2 exists to
+ * catch, and the browser should not be the one place it hides.
+ */
+export function fill(template: string, params?: CopyParams): string {
+  return template.replace(/\{([a-z0-9_]+)\}/gi, (whole, key: string) => {
+    const v = params?.[key];
+    if (v === undefined) {
+      console.error(`copy: unresolved placeholder {${key}} in ${JSON.stringify(template)}`);
+      return whole;
+    }
+    return String(v);
+  });
+}
+
+export class Copy {
+  constructor(private readonly tree: CopyTree) {}
+
+  /** Missing keys render as the key itself: loud, not blank. */
+  t(path: string, params?: CopyParams): string {
+    const raw = lookup(this.tree, path);
+    if (raw === null) {
+      console.error(`copy: missing key ${path} (data/config/copy.toml)`);
+      return path;
+    }
+    return fill(raw, params);
+  }
+
+  has(path: string): boolean {
+    return lookup(this.tree, path) !== null;
+  }
+
+  raw(): CopyTree {
+    return this.tree;
+  }
+}
+
+/** Reads the boot payload the server inlined into index.html. */
+export function readBoot(doc: Document = document): Boot {
+  const el = doc.getElementById("launder-boot");
+  if (el === null) {
+    throw new Error(
+      "no #launder-boot in the document: launder-serve must inline the boot " +
+        "payload (passage, level, detector expectation and data/config/copy.toml) " +
+        "before any JS runs — see TECH_PLAN.md §5.4 step 1 and §9.1.",
+    );
+  }
+  return JSON.parse(el.textContent ?? "") as Boot;
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": [
+      "packages/core/**",
+      "packages/serve/**",
+      "web/**",
+      "data/**",
+      "alembic/**",
+      "pyproject.toml",
+      "uv.lock",
+      "Dockerfile"
+    ]
+  },
+  "deploy": {
+    "startCommand": "uvicorn launder_serve.main:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips '*'",
+    "preDeployCommand": ["alembic upgrade head"],
+    "healthcheckPath": "/healthz",
+    "healthcheckTimeout": 60,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10,
+    "numReplicas": 1,
+    "overlapSeconds": 20,
+    "drainingSeconds": 15
+  },
+  "environments": {
+    "pr": {
+      "deploy": {
+        "preDeployCommand": ["alembic upgrade head"],
+        "numReplicas": 1
+      }
+    }
+  }
+}

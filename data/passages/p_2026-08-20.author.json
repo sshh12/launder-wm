@@ -1,0 +1,36 @@
+{
+  "schema": "launder.passage.author/1",
+  "id": "p_2026-08-20",
+  "candidate_id": "",
+  "run_id": "",
+  "reference_solution": null,
+  "solver": {
+    "move_set_id": "M-v2",
+    "par_upper": null,
+    "exhaustive_clear_free_upto_k": 0,
+    "best_single_edit_drop_z": 0.0,
+    "clears_at_k": {},
+    "judge_rejected_solutions": 0,
+    "search_seconds": 0.0
+  },
+  "difficulty": null,
+  "optionality": {
+    "entropy_nats": [],
+    "eff_choices": [],
+    "g_mass": [],
+    "wm_boost": [],
+    "top1_prob": []
+  },
+  "topk_alts": [],
+  "provenance": {
+    "prompt_rendered": "",
+    "prompt_rendered_sha256": "",
+    "gen_params": {},
+    "model_id": "google/gemma-3-4b-it",
+    "model_revision": "",
+    "dtype": "bfloat16",
+    "env": {}
+  },
+  "claims": [],
+  "par": 4
+}

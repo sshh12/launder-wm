@@ -1,0 +1,8 @@
+# data/golden/CHECKSUM — TECH_PLAN.md §4.5
+#
+# sha256 of every file in data/golden/, asserted in CI. Regenerating goldens is
+# therefore always a reviewed diff and never a way to turn a red test green.
+#
+# Verify from inside data/golden/:   sha256sum -c CHECKSUM
+823da25b210dac46870f2e3e95cdab5169b1e41b081a028e4baba4eab00f6371  tokenizer_golden.json
+bd35a380b4c636d3f25d2104e776b32d610a41652c3eb8d8d74ab8d35b0d2f1c  vectors.json
