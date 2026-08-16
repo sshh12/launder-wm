@@ -1,0 +1,58 @@
+@layer base {
+  .page {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+    min-height: 100dvh;
+    /* clip, not hidden: hidden can promote body to a scroll container on iOS
+       and silently kill the position:sticky descendants (§10.3). */
+    overflow-x: clip;
+  }
+
+  /* Unannounced quality floor: visible :focus-visible everywhere (§10.7). */
+  .page :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  .lbl {
+    font-size: 11px;
+    line-height: 14px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .prose {
+    font-family: var(--serif);
+  }
+
+  .app {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding-left: max(var(--gut), env(safe-area-inset-left));
+    padding-right: max(var(--gut), env(safe-area-inset-right));
+  }
+
+  .foot {
+    padding: 18px 0 10px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+}

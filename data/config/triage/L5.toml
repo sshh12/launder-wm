@@ -1,0 +1,57 @@
+# data/config/triage/L5.toml — TECH_PLAN.md §6.5, §7.6
+#
+# AUTHORING TIME ONLY. Unmeasured hypotheses; see L2.toml.
+#
+# L5 IS THE LEVEL WHOSE THRESHOLDS ARE DELIBERATELY DIFFERENT IN KIND.
+#
+# The watermark only bites where the model had near-equal choices: per-token
+# signal is (1 - C_t)/4 where C_t is the collision probability of the
+# post-warper distribution. Code has almost no optionality, so it has almost no
+# watermark — which IS the lesson of the level. Applying L1-L4's margins here
+# would reject every candidate and prove nothing.
+#
+# Two structural consequences (§7.6 deviation #2):
+#   * L5 has its OWN calibration bucket (`calibration = "code"`). Code has far
+#     fewer scored tokens and far lower optionality, so its sigma(T) curve and
+#     par must be FIT SEPARATELY. Never triage L5 against the prose curve.
+#   * L5 drops llm_gate. The unit test is a strictly stronger meaning check for
+#     code, so `judge_baseline_pass` is not an accept criterion here.
+#
+# Generate L5 candidates at temperature = 0.7 (code degrades fast above that)
+# and accept a much smaller starting margin.
+
+[accept]
+calibration_bucket               = "code"
+margin_z_min                     = 2.0         # deliberately small; see above
+n_scored_min                     = 40          # code passages are short in tokens
+median_eff_choices_min           = 3.0         # < 8 is the POINT of this level
+hot_runs_min                     = 1
+upstream_leverage_min            = 1.0         # still never below 1.0
+concentration_min                = 0.45        # what little signal exists is concentrated
+par_upper                        = { min = 1, max = 6 }
+exhaustive_clear_free_upto_k_min = 1
+retokenize_ok                    = true
+judge_baseline_pass              = false       # no llm_gate at L5 — not applicable
+
+[accept.unit_test]
+# A candidate is only a level if its tests are real. `forge triage` runs the
+# suite against the ORIGINAL code and refuses any candidate whose own tests do
+# not pass — a level whose source fails its own gate is unwinnable.
+suite_required          = true
+original_must_pass      = true
+min_test_cases          = 3
+max_runtime_ms          = 2000
+memory_mb               = 64
+# The suite must exercise edge cases, or "delete the body and return a
+# constant" clears the level.
+must_include_edge_cases = true
+
+[reject_reasons]
+trivial_single_edit  = "best_single_edit_drop_z >= margin_z"
+impossible           = "par_upper == null or par_upper > 8"
+original_fails_tests = "the candidate's own unit test suite does not pass"
+no_signal            = "margin_z < 2.0 — nothing to launder, so nothing to teach"
+wrong_curve          = "scored against the prose calibration instead of `code`"
+
+[derive]
+max_word_edits = "null"

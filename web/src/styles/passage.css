@@ -1,0 +1,177 @@
+@layer components {
+  .stage {
+    padding-top: 14px;
+  }
+
+  /* Variant 1 ONLY (§10.3): mirror BEHIND, textarea text VISIBLE, mirror
+     supplies background. The textarea keeps color: var(--ink) and a transparent
+     background; the mirror renders the same text in color: transparent with
+     per-token background-color. Native caret, selection, spellcheck and
+     accessibility all stay correct because the real text is the textarea's own,
+     and text contrast is guaranteed at every heat level.
+
+     The MIRROR is in normal flow and DEFINES the box height; the textarea is
+     absolutely positioned and stretched to it. They cannot disagree, because
+     only one of them has an opinion. Never auto-grow the textarea from
+     scrollHeight — that is a two-way loop that stutters. */
+  .passage {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    /* zero border-radius on the passage box (§10.6) */
+    border-radius: 0;
+  }
+  .passage:focus-within {
+    outline: 2px solid var(--ink);
+    outline-offset: -1px;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * EVERY declaration in this block must apply identically to BOTH boxes
+   * or the mirror drifts (§10.3). Do not split it, do not override one of
+   * them later in the cascade. web/tests/mirror.test.ts parses this file
+   * and fails if any required property is set on one selector and not the
+   * other. Three of them are the killers:
+   *   1. font-kerning / font-variant-ligatures — engines disable both inside
+   *      form controls but apply them in a <div>; one `fi` ligature
+   *      accumulates into a visible half-character offset by the right margin.
+   *   2. integer-px line-height — 1.6 x 17px = 27.2px and textarea line-box
+   *      layout rounds differently from block layout; line 1 aligns, line 14
+   *      is 3px off. 28px makes the bug class impossible.
+   *   3. text-size-adjust: 100% — Android Chrome font-boosts block containers
+   *      but not form controls, and only on a real phone.
+   * font-size is 17px because iOS zooms on focus below 16px and never resets;
+   * the check is the RENDERED size, so no transform on any ancestor, ever.
+   * ------------------------------------------------------------------ */
+  .mirror,
+  .raw {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    margin: 0;
+    border: 0;
+    padding: 16px 16px;
+    font-family: var(--serif);
+    font-size: 17px;
+    font-weight: 400;
+    font-style: normal;
+    line-height: 28px;
+    letter-spacing: 0;
+    word-spacing: 0;
+    text-indent: 0;
+    text-transform: none;
+    text-rendering: auto;
+    font-kerning: none;
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0;
+    font-variant-numeric: normal;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+    hyphens: none;
+    tab-size: 4;
+    direction: ltr;
+    unicode-bidi: normal;
+  }
+
+  /* L5 is code. Both boxes switch together or the mirror drifts. */
+  .passage[data-kind="code"] .mirror,
+  .passage[data-kind="code"] .raw {
+    font-family: var(--mono);
+    font-size: 16px;
+    line-height: 26px;
+  }
+
+  .raw {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    background: transparent;
+    color: var(--ink);
+    caret-color: var(--hot);
+    resize: none;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0;
+    /* The textarea NEVER scrolls internally; the page scrolls (§10.3). This one
+       decision eliminates all scroll-sync code and its one-frame lag, WebKit
+       138201, the iOS 15.1+ caret jitter, and scrollbar-width reflow
+       mismatches. */
+    overflow: hidden;
+    outline: none;
+  }
+  .raw[readonly] {
+    caret-color: transparent;
+  }
+
+  .mirror {
+    color: transparent;
+    pointer-events: none;
+    user-select: none;
+    min-height: 60px;
+  }
+  /* The intro and the primer demo have no textarea over them, so there the
+     mirror carries the visible text itself. */
+  .mirror[data-visible="1"] {
+    color: var(--ink);
+  }
+
+  /* Heat rides a HUE axis (warm -> hot) AND an alpha axis, both off one
+     registered <number> so what interpolates is the value, not the colour.
+     Heat is background wash + an inset bottom rule, NEVER text colour (§10.3).
+     Span rules are layout safety, not style (§10.4): a token span may set only
+     background-color, box-shadow: inset, color and border-radius. Never
+     display, padding, margin, border, transform, font-*, letter-spacing or
+     vertical-align — each changes line breaking and desynchronises the mirror.
+     border-radius: 0 because a span that wraps across a line becomes two boxes.
+     No will-change here: 300 spans would be 300 compositing layers. */
+  .tk {
+    --h: 0;
+    --a: 0;
+    --d: 0;
+    background-color: color-mix(
+      in oklab,
+      color-mix(in oklab, var(--hot) calc(var(--h) * 100%), var(--warm))
+        calc(var(--a) * var(--cap) * 1%),
+      transparent
+    );
+    /* Redundant encoding, because heat must never be the sole channel: the
+       inset bottom rule survives protanopia and greyscale (§10.4). */
+    box-shadow: inset 0 -2px 0
+      color-mix(in oklab, var(--hot) calc(var(--a) * var(--a) * var(--cap) * 1.7%), transparent);
+    border-radius: 0;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    transition-property: --h, --a;
+    transition-duration: var(--tkdur-cool);
+    transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+    /* Propagation 14ms/token, clamped: unclamped across 300 tokens takes 4s and
+       reads as a loading bar (§10.4). */
+    transition-delay: calc(min(var(--d), 16) * var(--tkstep));
+  }
+  /* The heating/cooling asymmetry is the whole trick (§10.4). */
+  .tk[data-dir="heating"] {
+    transition-duration: var(--tkdur-heat);
+    transition-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+  }
+  .tk[data-impulse] {
+    transition-duration: 120ms;
+    transition-delay: 0ms;
+  }
+  /* Masked tokens render visibly grey: they are structural free wins and the
+     player should see that (§9.2). Colour only — no layout properties. */
+  .tk[data-masked] {
+    color: var(--ink-2);
+    background-color: color-mix(in oklab, var(--rule) 16%, transparent);
+    box-shadow: none;
+  }
+  /* A level (re)load reuses pooled spans, so without this you get a 340ms heat
+     animation on load. */
+  .mirror[data-noanim="1"] .tk {
+    transition-duration: 0ms;
+    transition-delay: 0ms;
+  }
+}

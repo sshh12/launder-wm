@@ -1,0 +1,110 @@
+# data/config/schedule.toml — TECH_PLAN.md §12 row 14
+#
+# date -> passage_id -> level_id. `forge publish --date ... --candidate ...`
+# appends a row here and writes the two passage files. Editing this file and
+# restarting is the whole of "change which passage runs on which day".
+#
+# DAILY ROLLOVER IS UTC MIDNIGHT, stated in the UI. Any local-time scheme means
+# two players see different puzzles and the shared leaderboard becomes
+# incoherent (§9.8, open question #5).
+
+schema = "launder.schedule/1"
+
+# Puzzle numbering: puzzle_number = (day - epoch).days + first_number.
+# Fixed here so the share string ("Launder #212 — cleared in 4") is a pure
+# function of the date and never drifts if a day is inserted or removed.
+epoch        = 2026-08-16
+first_number = 1
+
+# Until M7 has produced a real passage set, a scheduled day whose passage file
+# is missing must be SKIPPED WITH A BOOT WARNING, not crash the server: the
+# static game is playable without /api/daily. Flip this to true once the
+# authoring pipeline is producing dailies, so a typo in a passage id becomes a
+# deploy failure instead of a missing puzzle.
+strict = false
+
+# The dedicated tutorial passage (§14.3 open question #9). One passage with
+# intro.prefix_z baked in — cumulative prefix z of a REAL passage, ~800 bytes,
+# and it is the difference between a tutorial and a cartoon. Served by the
+# intro slider, never by /api/daily.
+[intro]
+passage_id = "p_intro"
+level_id   = "L1"
+
+# --- the schedule ------------------------------------------------------------
+# One [[day]] per date. `notes` is authoring scratch and never reaches the
+# client.
+
+[[day]]
+date       = 2026-09-01
+passage_id = "p_2026-09-01"
+level_id   = "L1"
+notes      = "first daily; L1 so a cold visitor learns the loop before any rule"
+
+[[day]]
+date       = 2026-09-02
+passage_id = "p_2026-09-02"
+level_id   = "L2"
+notes      = "budget derived from par_upper + 2 by triage"
+
+[[day]]
+date       = 2026-09-03
+passage_id = "p_2026-09-03"
+level_id   = "L1"
+
+[[day]]
+date       = 2026-09-04
+passage_id = "p_2026-09-04"
+level_id   = "L3"
+notes      = "locked phrase; locked_share should land 0.15-0.45"
+
+[[day]]
+date       = 2026-09-05
+passage_id = "p_2026-09-05"
+level_id   = "L2"
+
+[[day]]
+date       = 2026-09-06
+passage_id = "p_2026-09-06"
+level_id   = "L4"
+notes      = "tight fence; require_claims = all"
+
+[[day]]
+date       = 2026-09-07
+passage_id = "p_2026-09-07"
+level_id   = "L1"
+
+[[day]]
+date       = 2026-08-16
+passage_id = "p_2026-08-16"
+level_id   = "L1"
+
+[[day]]
+date       = 2026-08-17
+passage_id = "p_2026-08-17"
+level_id   = "L2"
+
+[[day]]
+date       = 2026-08-18
+passage_id = "p_2026-08-18"
+level_id   = "L1"
+
+[[day]]
+date       = 2026-08-19
+passage_id = "p_2026-08-19"
+level_id   = "L3"
+
+[[day]]
+date       = 2026-08-20
+passage_id = "p_2026-08-20"
+level_id   = "L2"
+
+[[day]]
+date       = 2026-08-21
+passage_id = "p_2026-08-21"
+level_id   = "L4"
+
+[[day]]
+date       = 2026-08-22
+passage_id = "p_2026-08-22"
+level_id   = "L1"

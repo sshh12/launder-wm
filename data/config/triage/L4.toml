@@ -1,0 +1,52 @@
+# data/config/triage/L4.toml — TECH_PLAN.md §6.5, §7.7
+#
+# AUTHORING TIME ONLY. Unmeasured hypotheses; see L2.toml.
+#
+# L4 is the tight fence: cheap rewrites stop working, so a clear must exist
+# INSIDE the fence. That is a much stronger requirement than "a clear exists",
+# and it is the hardest acceptance test in the set — expect the lowest yield
+# here. The solver must be run with the fence's own constraints applied, or
+# par_upper is a number about a different game.
+
+[accept]
+margin_z_min                     = 7.0
+n_scored_min                     = 110
+median_eff_choices_min           = 16.0        # the fence forbids vocabulary replacement, so the
+                                               # passage itself must supply the optionality
+hot_runs_min                     = 3
+upstream_leverage_min            = 1.30        # the core skill metric, at its strictest
+concentration_min                = 0.40        # a surgical kill must exist
+par_upper                        = { min = 4, max = 8 }
+exhaustive_clear_free_upto_k_min = 2
+retokenize_ok                    = true
+judge_baseline_pass              = true
+
+# The fence bounds the repetition-mask exploit incidentally (§4.4c, open
+# question #3): a passage that already sits near the mask ceiling gives the
+# player nothing to discover.
+masked_fraction_max              = 0.20
+
+[accept.fence]
+# Must match data/config/levels.toml L4 close_paraphrase params exactly, or
+# the solver proves a clear the level then rejects. `forge triage` asserts the
+# two agree and refuses to run if they do not.
+min_content_word_retention = 0.55
+max_word_distance_ratio    = 0.45
+length_ratio               = [0.80, 1.25]
+max_sentence_count_delta   = 1
+min_sentence_alignment     = 0.40
+# A solver clear that violates the fence is not a clear.
+solver_must_respect_fence  = true
+
+[reject_reasons]
+trivial_single_edit    = "best_single_edit_drop_z >= margin_z"
+impossible             = "par_upper == null or par_upper > 10"
+no_surgical_target     = "hot_runs < 3"
+teaches_wrong_lesson   = "upstream_leverage < 1.0"
+no_clear_inside_fence  = "solver found no fence-respecting clear"
+repetition_saturated   = "masked_fraction > 0.20"
+
+[derive]
+# L4 has no edit_budget check — close_paraphrase's max_word_distance_ratio is
+# the budget, and it is a ratio, not a count.
+max_word_edits = "null"

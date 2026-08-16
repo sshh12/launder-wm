@@ -1,0 +1,33 @@
+# data/config/triage/L2.toml — TECH_PLAN.md §6.5, verbatim
+#
+# AUTHORING TIME ONLY. Never read by the server, never shipped to the browser.
+# `forge triage --policy` applies it to data/candidates/<run_id>.jsonl.
+#
+#   EVERY THRESHOLD IN THIS FILE IS A HYPOTHESIS NOBODY HAS MEASURED.
+#
+# upstream_leverage >= 1.25, concentration >= 0.35, hot_runs >= 2, and the
+# expected 10-20% yield are all guessed. The mitigation is structural: triage is
+# a config sweep, not a code change, and THE FIRST 400-CANDIDATE RUN IS A
+# CALIBRATION EXPERIMENT WHOSE OUTPUT IS THE THRESHOLDS, NOT THE PASSAGES.
+# Expect the metric DEFINITIONS to change, not only their values (§14.2 item 10).
+
+[accept]
+margin_z_min                     = 6.0
+n_scored_min                     = 90
+median_eff_choices_min           = 12.0
+hot_runs_min                     = 2
+upstream_leverage_min            = 1.25
+concentration_min                = 0.35
+par_upper                        = { min = 3, max = 7 }
+exhaustive_clear_free_upto_k_min = 2
+retokenize_ok                    = true
+judge_baseline_pass              = true
+
+[reject_reasons]
+trivial_single_edit  = "best_single_edit_drop_z >= margin_z"
+impossible           = "par_upper == null or par_upper > 10"
+no_surgical_target   = "hot_runs == 0"
+teaches_wrong_lesson = "upstream_leverage < 1.0"
+
+[derive]
+max_word_edits = "par_upper + 2"     # the L2 budget, derived not guessed

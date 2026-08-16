@@ -1,0 +1,36 @@
+# data/config/triage/L3.toml — TECH_PLAN.md §6.5
+#
+# AUTHORING TIME ONLY. Unmeasured hypotheses; see L2.toml.
+#
+# L3 is "launder AROUND fixed signal". The locked phrase must carry real,
+# untouchable evidence — enough that working around it is the puzzle, not so
+# much that the passage is unclearable with the phrase intact.
+
+[accept]
+margin_z_min                     = 6.0
+n_scored_min                     = 100         # the locked span is dead weight; need more elsewhere
+median_eff_choices_min           = 12.0
+hot_runs_min                     = 2
+upstream_leverage_min            = 1.25
+concentration_min                = 0.35
+par_upper                        = { min = 4, max = 9 }
+exhaustive_clear_free_upto_k_min = 2
+retokenize_ok                    = true
+judge_baseline_pass              = true
+
+# L3-only. `locked_share` is the fraction of total evidence inside the locked
+# phrase. Below 0.15 the lock is decorative; above 0.45 the level is a coin
+# flip on whether a clear exists at all (§6.5).
+locked_share                     = { min = 0.15, max = 0.45 }
+locked_phrase_words              = { min = 3, max = 8 }
+
+[reject_reasons]
+trivial_single_edit  = "best_single_edit_drop_z >= margin_z"
+impossible           = "par_upper == null or par_upper > 12"
+no_surgical_target   = "hot_runs == 0"
+teaches_wrong_lesson = "upstream_leverage < 1.0"
+lock_is_decorative   = "locked_share < 0.15"
+lock_is_fatal        = "locked_share > 0.45"
+
+[derive]
+max_word_edits = "par_upper + 4"     # roomier than L2: working around a lock costs edits

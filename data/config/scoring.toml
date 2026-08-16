@@ -1,0 +1,85 @@
+# data/config/scoring.toml — TECH_PLAN.md §8.1
+#
+# `scoring_version` is hashed into the judge cache key. Changing normalization
+# changes scores, so it MUST invalidate caches: bump `scoring_version` in the
+# same commit as any switch below (§8.3, §12 row 10).
+
+schema          = "launder.scoring/1"
+scoring_version = "sc1"
+
+# --- normalization ----------------------------------------------------------
+# normalize() MUST be idempotent: normalize(normalize(x)) == normalize(x),
+# asserted by a Hypothesis property test. It is the same function that produces
+# the text sent to the LLM, so the thing hashed for the cache key is exactly the
+# thing judged.
+
+nfc                 = true   # NFC, NOT NFKC — see below
+collapse_whitespace = true   # runs -> one space; CRLF -> LF -> space; strip ends
+fold_smart_quotes   = true   # curly -> straight (an iOS autocorrect artifact, not an edit)
+fold_dashes         = true   # en/em dash -> hyphen
+fold_ellipsis       = true   # U+2026 -> "..."
+nbsp_to_space       = true   # U+00A0 -> U+0020
+
+# NEVER. Casing is evidence for the judge; punctuation is sentence structure.
+# Declared and pinned false rather than omitted, so turning either on is a
+# visible diff sitting next to the reason it is wrong.
+lowercase          = false
+strip_punctuation  = false
+
+# Why NFC and not NFKC: NFKC folds `fi` -> "fi" and circled-1 -> "1", changing
+# tokenization in ways the player did not author — and the judge eval set
+# contains NFKC-bait as a MUST-FAIL case. Folding it at normalize time would let
+# the exploit through. `unicode_sanitation` REJECTS confusables; normalization
+# does not silently repair them.
+#
+# Zero-width, soft hyphen, bidi controls, variation selectors and private-use
+# codepoints are NOT stripped here. They are rejected by `unicode_sanitation`
+# (§7.2). Stripping would let the exploit succeed at the detector while the
+# judge sees clean text.
+
+# --- word tokenization ------------------------------------------------------
+# normalize -> split on /\s+/. Punctuation STAYS ATTACHED to its word. This is
+# deliberate: "study." -> "study," costs 1, because it is one thing a player
+# did. Comparing on stripped words would make punctuation free and invite a
+# degenerate "repunctuate everything" move that the tokenizer does notice.
+[words]
+split_pattern      = "\\s+"
+keep_punctuation   = true
+
+# --- the distance -----------------------------------------------------------
+# Unrestricted Damerau-Levenshtein (Lowrance-Wagner) over the word sequence,
+# unit costs, adjacent transposition = 1. NOT Optimal String Alignment: OSA
+# forbids editing between transposed elements and would price a legitimate
+# "swap two words then change one of them" at 3 instead of 2. CONCEPT.md's
+# requirement — "a reorder counts as 1, so reordering is cheap, not free" — is
+# the unrestricted variant's property.
+[distance]
+algorithm            = "damerau_levenshtein_unrestricted"
+cost_substitute      = 1
+cost_insert          = 1
+cost_delete          = 1
+cost_transpose       = 1
+# Backtrace determinism matters — two clients must render the same diff — so
+# tie-breaking is fixed in this order and pinned by golden case #8.
+backtrace_tie_break  = ["substitute", "delete", "insert", "transpose"]
+
+# --- the tight fence's lemma table (§7.7) -----------------------------------
+# Lemmatization is a SMALL COMMITTED TABLE (stemmer + irregular-forms list),
+# versioned by `scoring_version` — never a runtime NLP dependency, because a
+# silently updated lemmatizer would change verdicts underneath the judge cache.
+#
+# Both files exist and are READ: `launder_core.gates.checks.close_paraphrase`
+# loads them lazily (import-time filesystem reads would break §2.1's bare-venv
+# import) and keeps the module-level dicts only as the no-data/ fallback, with
+# `assert_tables_match_files()` asserting the two copies are identical.
+# They did not exist at all for a while, and the check hardcoded everything.
+[lemma]
+table_path     = "data/config/lemma.v1.tsv"
+stopwords_path = "data/config/stopwords.v1.txt"
+# NOT "porter2", which this never was. The rule set is the shallow suffix
+# stripper in `lemma()`: plural, past, gerund, and the -ly/-ness adverbial pair.
+# Porter's later steps conflate words a reader would not call the same word, and
+# this metric answers "did you keep the original's vocabulary", not "build me a
+# search index". Naming a real algorithm we do not run invites someone to swap
+# in a Porter2 library and silently move every L4 verdict.
+stemmer        = "suffix_rules_v1"

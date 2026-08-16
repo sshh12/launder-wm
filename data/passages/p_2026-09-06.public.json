@@ -1,0 +1,27 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p_2026-09-06",
+  "level_id": "L4",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Textile dyeing is a complex process deeply rooted in chemistry and color science, transforming plain fabrics into the vibrant and patterned textiles we see every day. Traditionally, the process relied heavily on natural dyes extracted from plants, insects, or minerals, often involving laborious extraction and reduction methods. However, modern textile dyeing predominantly utilizes synthetic dyes, which offer a broader spectrum of colors, greater colorfastness, and easier application. The initial stage typically involves preparing the fabric, often through scouring to remove impurities and oils that could interfere with dye uptake. Then, the fabric is immersed in a dye bath, a carefully formulated solution containing the dye, a mordant – a substance that helps the dye bind to the fiber – and auxiliary chemicals. The temperature, pH, and duration of immersion are meticulously controlled to ensure even dye penetration and optimal color development. Different dye classes, such as direct dyes, reactive dyes, and vat dyes, are suited for different fiber types and offer varying levels of wash and light fastness. Following dyeing, a rinsing and fixation process is crucial to remove excess dye and permanently bond it to the textile, ultimately resulting in the desired colored fabric. Concerns regarding environmental impact are increasingly driving research into more sustainable dyeing practices, including waterless dyeing technologies and the use of eco-friendly dyes. \n\n---\n\nWould you like me to expand on a specific aspect of textile dyeing, such as a particular type of dye, environmental considerations, or the dyeing process for a specific fiber?\n---\n.",
+  "n_words": 251,
+  "detector": {
+    "expected_n_scored": 295,
+    "expected_score": 0.5285514407665197,
+    "expected_z": 5.187083546380433,
+    "g_digest": "blake3:55a10987b7f1cf766c439e38d11e6f6284ccc4a18866c87360e99b7b50dec69a"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

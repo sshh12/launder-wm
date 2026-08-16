@@ -1,0 +1,155 @@
+# data/config/judge.toml — TECH_PLAN.md §7.3-§7.5
+#
+# The LLM does not emit a verdict. It emits OBSERVATIONS against a per-passage
+# claim list shipped as repo data; code computes the verdict. That collapses
+# three problems into one mechanism: prompt injection has no "output pass" to
+# target, the tight fence becomes claim-completeness rather than vibes, and all
+# six levels share one prompt, one cache namespace and one eval set.
+
+schema        = "launder.judge/1"
+judge_version = "g3"
+prompt_id     = "judge.observe.v3"
+
+# --- provider ---------------------------------------------------------------
+# Selected by the JUDGE_PROVIDER env var; this file records the intended
+# default and the failover chain. `fake` is deterministic and marker-driven
+# (__FAIL_INJECTION__, __FAIL_NATURAL__, __DROP_c3__) — its job is to exercise
+# the PIPELINE, not to judge well. `cassette` replays recorded verdicts keyed by
+# the same cache key and RAISES ON A MISS, so CI can never silently spend money.
+provider          = "openai"           # openai | anthropic | fake | cassette
+failover_provider = "anthropic"        # failover, NOT consensus (§7.5)
+
+# VERIFY-BEFORE-BUILD (§7.5, §14.2 item 4). Model IDs and pricing in the source
+# research run were an unverified third-party scrape. PIN `JUDGE_MODEL` FROM THE
+# LIVE PRICING PAGE AT BUILD TIME and settle the choice with
+# `make eval-judge-compare` at M5 — not from any document, including this one.
+# The env var wins; these are the recorded defaults, and they are placeholders
+# until that comparison runs.
+model             = "REPLACE_AT_BUILD_TIME"   # VERIFY: pin from the live pricing page
+failover_model    = "REPLACE_AT_BUILD_TIME"   # VERIFY: Haiku-class, failover only
+
+# Non-negotiable regardless of model: reasoning tokens bill as output AND push
+# TTFT from sub-second into tens of seconds, and a submit gate that stalls the
+# player for 30 s is a broken game.
+reasoning_effort  = "none"
+temperature       = 0.0
+max_output_tokens = 300
+timeout_s         = 6.0      # MUST stay shorter than railway.json drainingSeconds (15)
+max_retries       = 1        # one retry, then failover. Never both providers per submit.
+shadow_sample_rate = 0.01    # 1% mirror to the second provider, for mining eval cases
+
+# --- prompt integrity -------------------------------------------------------
+# prompt_hash = sha256(system_prompt + json.dumps(schema, sort_keys=True)
+#                      + model_id + reasoning_effort)
+# ASSERTED AT BOOT against the value below. A forgotten judge_version bump is
+# the single most likely way to serve stale verdicts after a prompt edit; this
+# turns it into a startup failure (§7.5, §12 row 12).
+#
+# PLACEHOLDER. `launder_serve.judge.prompt` computes the real value; the first
+# boot after the prompt lands will fail with the correct hash in the message,
+# and that hash goes here. Do not compute it by hand.
+prompt_hash = "PLACEHOLDER_SET_ON_FIRST_BOOT"
+prompt_hash_enforced = true
+
+# --- schema -----------------------------------------------------------------
+[schema_out]
+name                 = "launder_gate_observation"
+strict               = true
+additional_properties = false
+required = ["natural_prose", "unnatural_kind", "claims", "added_claims",
+            "contains_embedded_instructions", "notes", "verdict_opinion"]
+unnatural_kinds = ["word_salad", "keyword_soup", "repetition", "non_prose_content", "not_english"]
+claim_how       = ["asserted", "missing", "negated", "altered", "hedged", "reattributed"]
+max_added_claims_reported = 3
+
+# --- verdict derivation (§7.4) ----------------------------------------------
+# Code computes the verdict from observations plus the level config. Level
+# params (require_claims / max_missing_claims / max_added_claims) live in
+# levels.toml; only the always-on rules live here.
+[verdict]
+injection_fails_closed = true   # ALWAYS. Never provisional, never fail-open.
+unnatural_fails        = true
+# `verdict_opinion` is TELEMETRY ONLY. A persistent gap between it and the
+# derived verdict means the prompt and the level config disagree, which is a
+# prompt bug worth mining.
+use_verdict_opinion    = false
+
+# --- caching (§7.5) ---------------------------------------------------------
+# key = sha256("\x1f".join([judge_version, prompt_hash, scoring_version,
+#                           passage_id, level_id, sha256(normalized).hexdigest()]))
+# The nonce is EXCLUDED from the cache key — the key hashes the normalized
+# submission, not the rendered prompt.
+[cache]
+key_fields   = ["judge_version", "prompt_hash", "scoring_version", "passage_id", "level_id", "text_hash"]
+key_separator_codepoint = 31   # U+001F ASCII unit separator; the unit-separator join of TECH_PLAN.md 7.5
+scope        = "global"      # not per-player: one daily for everyone means convergent solutions dedupe hard
+cache_failures = true        # most repeat traffic is a player resubmitting identical broken text
+cache_errors   = false       # a provisional clear must NEVER become permanent
+ttl_seconds    = 0           # no TTL — keys are content-addressed and version-scoped
+lru_entries    = 2000        # process-local, in front of the repo
+
+# --- abuse ladder (§7.5) ----------------------------------------------------
+# Rungs 0-2 are NOT rate limited: a player hammering the detector and failing
+# rung 1 costs nothing, and throttling that would make the game feel broken.
+[limits]
+daily_usd_cap          = 2.00        # env JUDGE_DAILY_USD_CAP wins
+rate_limit_per_hour    = 10          # misses only
+rate_limit_burst       = 3
+# Railway's DOCUMENTED header. X-Forwarded-For is not in the documented set
+# (VERIFY, §14.2 item 6). A MISSING header must mean ONE SHARED BUCKET, never
+# "unlimited".
+rate_limit_header      = "X-Real-IP"
+missing_header_policy  = "shared_bucket"
+pow_enabled            = false
+
+# --- fail-open policy (§7.5) ------------------------------------------------
+# After retry and failover, return cleared=true provisional=true: the chime
+# plays, the leaderboard and streak exclude it, and it is labelled "gate
+# unavailable". The deterministic checks already caught every mechanical
+# exploit; a false clear costs a leaderboard row, a false rejection costs a
+# player. The ONE exception is contains_embedded_instructions.
+[failure_policy]
+on_provider_error = "fail_open_provisional"
+on_injection      = "fail_closed"
+on_spend_cap      = "fail_open_provisional"
+
+# --- eval gates (§7.8) ------------------------------------------------------
+# The runner REFUSES TO RUN if any bucket is under quota, which stops the set
+# drifting toward whatever the judge already gets right. The eval set is the
+# asset; the prompt is disposable.
+[eval]
+cases_path            = "data/judge_eval/cases.jsonl"
+min_cases             = 140
+runs_per_case         = 3
+max_exploit_rate      = 0.02   # 0% on fail_injection and fail_unicode
+max_frustration_rate  = 0.05   # <=3% on pass_whole_sentence_paraphrase
+min_cohens_kappa      = 0.80
+min_fence_discrimination = 0.90
+max_self_inconsistency   = 0.02
+max_p95_latency_s        = 2.5
+
+[eval.quota]
+pass_surgical                  = 12
+pass_whole_sentence_paraphrase = 15   # the single most important bucket; must never fail
+pass_full_rewrite_faithful     = 10
+pass_register_shift            = 8
+pass_reorder                   = 6
+pass_awkward_but_readable      = 8
+pass_borderline                = 8
+fail_word_salad                = 8
+fail_keyword_soup              = 10
+fail_repetition                = 6
+fail_drift_dropped_claim       = 12
+fail_drift_added_claim         = 8
+fail_inversion                 = 8
+fail_entity_swap               = 8
+fail_topic_switch              = 4
+fail_unicode                   = 10   # asserted against the FULL pipeline; must never reach the LLM
+fail_injection                 = 15   # >=15 distinct phrasings
+fence_discriminating           = 12   # scored under both L1 and L4; must split
+fence_pass_both                = 8
+
+[eval.regression_tolerance]
+exploit_rate_pp     = 0.0
+frustration_rate_pp = 2.0
+cohens_kappa        = -0.03

@@ -1,0 +1,32 @@
+/* Launder LM — style entry point.
+ *
+ * TECH_PLAN.md §10.6 CSS discipline, and it is not decoration:
+ *   @layer reset, tokens, base, components, state;
+ *   flat single-level class namespace
+ *   no element selectors outside the reset
+ *   no !important
+ *   all spacing from tokens
+ *
+ * The layer order is declared HERE, once, before any @import. Every imported
+ * file opens its own `@layer <name> { ... }` block rather than relying on
+ * `@import ... layer()`, because bundlers inline @import and the layer()
+ * qualifier does not reliably survive that inlining.
+ *
+ * Visual direction: "Dead Air" (§10.6). The passage is a signal being read off
+ * a printed linear instrument, not a dashboard. Ported from TECH_PLAN_MOCK.html
+ * — the palette, the 21-tick scale, the care-symbol gate vocabulary and the
+ * heat ramp are decided, not open.
+ */
+
+@layer reset, tokens, base, components, state;
+
+@import "./reset.css";
+@import "./tokens.css";
+@import "./base.css";
+@import "./rail.css";
+@import "./passage.css";
+@import "./gate.css";
+@import "./sheets.css";
+@import "./intro.css";
+@import "./result.css";
+@import "./state.css";

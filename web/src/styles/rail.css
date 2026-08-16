@@ -1,0 +1,292 @@
+@layer components {
+  /* The instrument. Sticky TOP because it is read and never touched, and a top
+     rail survives the software keyboard while a bottom one gets buried (§10.5).
+     position: sticky, never fixed — WebKit 176896 mispositions the caret under
+     a fixed ancestor. */
+  .rail {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: var(--bg);
+    padding: 10px 0 8px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 22px;
+    margin-bottom: var(--sp-1);
+    font-size: 10px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .notice[hidden] {
+    display: none;
+  }
+  .ndot {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border: 1px solid var(--ink-2);
+    background: transparent;
+  }
+  .notice[data-tone="warn"] {
+    color: var(--hot);
+  }
+  .notice[data-tone="warn"] .ndot {
+    border-color: var(--hot);
+    background: var(--hot);
+  }
+
+  .railhead {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    margin-bottom: 7px;
+  }
+  .daily {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--ink-2);
+    flex: none;
+  }
+  .lvlchip {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink);
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 2px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lvlchip em {
+    font-style: normal;
+    color: var(--hot);
+  }
+
+  .readout {
+    margin-left: auto;
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    flex: none;
+  }
+  .num {
+    font-size: 26px;
+    line-height: 26px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    transition-property: color, font-size;
+    transition-duration: 200ms;
+  }
+  .stateword {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .num[data-below="1"],
+  .stateword[data-below="1"] {
+    color: var(--cold);
+  }
+  /* The reading is a reading, not a guess: while a keystroke is outstanding the
+     number is dimmed rather than animated to an invented value (§10.4). */
+  .num[data-pending="1"] {
+    opacity: 0.55;
+  }
+
+  /* The meter is a printed linear scale, not a dial: at 360px a galvanometer's
+     numerals render at ~4.3px and its threshold mark at one device pixel
+     (§10.6). 21 hairline ticks at 5%, hard two-state fill, and the one and only
+     drop shadow in the app is on the needle. */
+  .meter {
+    position: relative;
+  }
+  .face {
+    position: relative;
+    height: 34px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 0;
+    overflow: hidden;
+  }
+  .tick {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    background: var(--rule);
+  }
+  .tick[data-maj="1"] {
+    height: 10px;
+  }
+  .tick[data-maj="0"] {
+    height: 5px;
+  }
+  .track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 9px;
+    height: 1px;
+    background: var(--rule);
+  }
+  .fill {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 9px;
+    width: 100%;
+    background: var(--hot);
+    /* --init-n is written server-side so the bar is correct before any JS. */
+    transform: scaleX(var(--init-n, 0));
+    transform-origin: left center;
+    will-change: transform;
+    transition-property: transform, background-color;
+    transition-duration: 380ms;
+    transition-timing-function: cubic-bezier(0.34, 1.36, 0.64, 1);
+  }
+  .fill[data-below="1"] {
+    background: var(--cold);
+  }
+  .notch {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--hot);
+    margin-left: -1px;
+  }
+  .notch[data-below="1"] {
+    background: var(--cold);
+  }
+  .peak {
+    position: absolute;
+    top: 1px;
+    left: 0;
+    height: 12px;
+    width: 1px;
+    background: var(--ink-2);
+    margin-left: -0.5px;
+    transform: translateX(0);
+    transition-property: transform, opacity;
+    transition-duration: 1200ms;
+    transition-timing-function: linear;
+  }
+  .peak[data-snap="1"] {
+    transition-duration: 1ms;
+  }
+  .needle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    /* --init-x is a PERCENTAGE of the face, written server-side, so the needle
+       reads the passage's expected_z before any JS AND at any viewport width.
+       It used to be a px offset inside translateX(), which the server cannot
+       compute: the face width is layout-dependent, so the only value it could
+       honestly write was 0 — i.e. a needle pinned at the left edge for the
+       whole pre-JS frame. `Needle` zeroes this the moment it takes over, so the
+       percentage and the transform never compose. */
+    left: var(--init-x, 0%);
+    width: 1px;
+    background: var(--ink);
+    box-shadow: var(--needle-shadow);
+    transform: translateX(0);
+    will-change: transform;
+    transition-property: transform;
+    transition-duration: 380ms;
+    transition-timing-function: cubic-bezier(0.34, 1.36, 0.64, 1);
+  }
+  /* The index mark rides the TOP of the face so nothing is clipped and it never
+     collides with the 9px fill bar. */
+  .needle::after {
+    content: "";
+    position: absolute;
+    left: -4px;
+    top: 0;
+    border-left: 4.5px solid transparent;
+    border-right: 4.5px solid transparent;
+    border-top: 7px solid var(--ink);
+  }
+  /* Threshold crossing is ONE moment: one 220ms hairline sweep, once (§10.4). */
+  .sweep {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: var(--cold);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .scalerow {
+    position: relative;
+    height: 14px;
+    margin-top: 3px;
+  }
+  .scalerow span {
+    position: absolute;
+    top: 0;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: var(--ink-2);
+  }
+  .gutrow {
+    position: relative;
+    height: 13px;
+  }
+  .tri {
+    position: absolute;
+    top: -3px;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid var(--hot);
+    margin-left: -4px;
+  }
+  .tri[data-below="1"] {
+    border-bottom-color: var(--cold);
+  }
+  /* NOT "Floor" — that word is already the word minimum. One word, one
+     meaning (§10.7). The string is copy.readout.threshold_label. */
+  .floorlbl {
+    position: absolute;
+    top: 1px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--hot);
+    white-space: nowrap;
+  }
+  .floorlbl[data-below="1"] {
+    color: var(--cold);
+  }
+
+  /* The persistent way back into the primer. A panel legend, not a chat
+     bubble. "?" is the ONE explain-affordance in the product (§10.7). */
+  .whatbtn {
+    flex: none;
+    align-self: center;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    line-height: 1;
+    color: var(--ink-2);
+    background: none;
+    border: 1px solid var(--rule);
+    border-radius: var(--r);
+    padding: var(--sp-1) 6px;
+    cursor: pointer;
+    transition-property: color, border-color;
+    transition-duration: 120ms;
+  }
+  .whatbtn:hover {
+    color: var(--ink);
+    border-color: var(--ink-2);
+  }
+}

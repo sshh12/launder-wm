@@ -1,0 +1,58 @@
+@layer reset {
+  /* The ONLY place element selectors are allowed (§10.6). */
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* Android Chrome font-boosts block containers but not form controls; without
+     this the mirror renders ~1.2x larger than the textarea and only on a real
+     phone (§10.3, killer #3). */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body,
+  h1,
+  h2,
+  p,
+  ul,
+  ol,
+  li,
+  figure,
+  dl,
+  dd {
+    margin: 0;
+    padding: 0;
+  }
+
+  ul,
+  ol {
+    list-style: none;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  /* The diff supplies its own decoration; the defaults are the wrong weight. */
+  ins,
+  del {
+    text-decoration: none;
+  }
+
+  svg {
+    display: block;
+  }
+}

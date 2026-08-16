@@ -1,0 +1,65 @@
+# data/config/prompts/high_entropy.yaml — TECH_PLAN.md §6.2, §12 row 21
+#
+#   "Generation prompts / temperature | data/config/prompts/*.yaml |
+#    templates, slots, gen_params | next `forge gen`"
+#
+# i.e. TUNABLE WITHOUT A CODE CHANGE. It was not: `forge gen` built its prompts
+# from a hardcoded f-string over a module-level `_NULL_TOPICS` tuple in cli.py,
+# `PathSet.prompts_dir` was defined and called by nothing, and this directory
+# did not exist. Changing generation prompts was a code change.
+#
+# `forge gen --prompts high_entropy` reads this file. Editing it changes the
+# NEXT run and nothing that already exists: candidates record their rendered
+# prompt in `provenance.prompt_rendered`, so a passage generated under an older
+# pack stays reproducible from its own record.
+#
+# WHY "high entropy": the watermark can only be embedded where the model had a
+# real choice. Prompts that invite texture, sensory detail and varied sentence
+# length leave many plausible next tokens per position; prompts that demand
+# facts, lists or a fixed format collapse the distribution and produce passages
+# with almost nothing to launder. `median_eff_choices` in triage is the metric
+# that catches a pack that has drifted low.
+
+schema: launder.prompts/1
+id: high_entropy
+
+# Sent as the system message when the chat template is applied. Empty means "no
+# system message", which is NOT the same as a blank one.
+system: ""
+
+# One template is chosen per candidate, round-robin over the list, with slots
+# filled from `slots` below. Round-robin, not random: a 400-candidate run then
+# covers every template x topic pair evenly and the yield numbers per template
+# are comparable.
+templates:
+  - "Describe {topic} focusing entirely on texture and light. One paragraph. Vary sentence length."
+  - "Write one flowing paragraph about {topic}. No lists, no headings. Let the sentences run long where they want to."
+  - "One paragraph of plain, unhurried prose about {topic}. Concrete detail, no summary, no conclusion."
+  - "Write about {topic} the way someone would describe it to a friend who has never seen it. One paragraph."
+
+slots:
+  topic:
+    - "harbour dredging"
+    - "school bus routing"
+    - "cheese ripening"
+    - "bridge inspection"
+    - "a disused railway cutting"
+    - "a hotel lobby in the off-season"
+    - "a tidal flat"
+    - "sharpening a chisel"
+    - "proofing dough"
+    - "splicing rope"
+    - "tuning a spoke"
+    - "the smell of a hardware store"
+    - "an empty municipal swimming pool"
+    - "the last hour of a long shift"
+    - "rain arriving over a reservoir"
+
+# Passed to `generate_batch`. The CLI's own flags win when given explicitly, so
+# `forge gen --temperature 0.8` overrides this without editing the file.
+gen_params:
+  temperature: 0.95
+  top_p: 0.95
+  top_k: 0
+  max_new_tokens: 320
+  min_new_tokens: 180

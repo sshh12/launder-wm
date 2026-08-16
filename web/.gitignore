@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+coverage/
+# playwright, when M2 adds it
+test-results/
+playwright-report/

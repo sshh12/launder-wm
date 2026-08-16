@@ -1,0 +1,27 @@
+{
+  "schema": "launder.passage.public/1",
+  "id": "p_2026-09-07",
+  "level_id": "L1",
+  "wm_config_id": "wm1:4f5f7fa87a12a49e36c0f83eeb4c28ac3b6f4957c4dcbe54a50514eff170a591",
+  "asset_bundle_id": "ab1:5210749ffb9a40a17acc1d2cc4bd7f9053317fcdaffdd0b39f62c90b6303b836",
+  "scoring_version": "sc1",
+  "text": "Well drilling is a complex and technically demanding process of creating a subterranean hole to access groundwater or geological formations. The initial phase typically begins with extensive geological surveys, utilizing techniques like seismic refraction and geophysical logging to map subsurface strata and determine the best location for the well. Once a suitable spot is identified, a drilling rig is brought to the site, a massive piece of machinery equipped with a rotating drill bit, a powerful engine, and a system for managing drilling fluids. The drill bit, often made of hardened steel, grinds through soil, rock, and other obstructions, and the rotating motion generates friction that removes the loosened material. Drilling fluids, known as mud, are pumped down the borehole to lubricate the bit, cool it, remove cuttings (fragments of rock and soil), and stabilize the walls of the hole, preventing collapse. As the drill progresses, casing – a sturdy steel pipe – is inserted into the borehole to provide structural integrity, prevent contamination of the groundwater, and allow for the installation of a pump.  The depth of the well is determined by the desired yield, geological conditions, and local regulations, and once drilling is complete, the casing is cemented in place to ensure a secure and long-lasting well. Finally, a pump is placed at the top of the well to draw water to the surface for use. \n\n---\n\nWould you like me to expand on a specific aspect of well drilling, or perhaps provide a paragraph focusing on a particular type of well (e.g., geothermal)?",
+  "n_words": 256,
+  "detector": {
+    "expected_n_scored": 299,
+    "expected_score": 0.5274628420055707,
+    "expected_z": 5.014734238416161,
+    "g_digest": "blake3:e853c2b823ac91d02274198fe78b074cdba85ccdbff873c6a615267d8f7beb58"
+  },
+  "rules": {
+    "min_words": 50,
+    "max_word_edits": null,
+    "locked_phrases": [],
+    "unit_test_id": null
+  },
+  "claims": [],
+  "par": 4,
+  "par_source": "authored_reference",
+  "judge_prompt_id": "judge.observe.v3",
+  "intro": null
+}

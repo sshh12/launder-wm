@@ -1,0 +1,126 @@
+# data/config/lemma.v1.tsv — TECH_PLAN.md §7.7
+#
+# The irregular-forms half of the lemma table for `close_paraphrase`
+# (`content_word_retention`, L4's tight fence). Two tab-separated columns:
+#
+#	form	lemma
+#
+# WHY A COMMITTED FILE AND NOT AN NLP LIBRARY: a silently updated lemmatizer
+# changes L4 verdicts underneath the judge cache, so the table is data, it is
+# versioned by `scoring_version`, and changing it is a reviewed diff.
+#
+# It is SMALL on purpose. The metric is a ratio over a ~200-word passage, so a
+# handful of misses moves it by half a percent, while a 40 MB lemmatizer would
+# orphan every cached verdict.
+#
+# The regular cases (plural, past, gerund, -ly/-ness) are handled by the suffix
+# rules in `lemma()` — `scoring.toml [lemma] stemmer` names which rule set.
+# Lines starting with `#` and blank lines are ignored. `form` is matched after
+# lowercasing and stripping attached punctuation.
+
+am	be
+analyses	analysis
+are	be
+became	become
+becoming	become
+been	be
+began	begin
+beginning	begin
+begun	begin
+being	be
+best	good
+better	good
+bought	buy
+bringing	bring
+brought	bring
+building	build
+built	build
+buying	buy
+came	come
+children	child
+choosing	choose
+chose	choose
+chosen	choose
+coming	come
+criteria	criterion
+data	datum
+did	do
+does	do
+doing	do
+done	do
+feet	foot
+finding	find
+found	find
+gave	give
+geese	goose
+given	give
+giving	give
+goes	go
+going	go
+gone	go
+had	have
+has	have
+having	have
+held	hold
+holding	hold
+hypotheses	hypothesis
+is	be
+keeping	keep
+kept	keep
+knew	know
+knowing	know
+known	know
+leading	lead
+leaving	leave
+led	lead
+left	leave
+losing	lose
+lost	lose
+made	make
+making	make
+meaning	mean
+meant	mean
+meeting	meet
+men	man
+met	meet
+mice	mouse
+paid	pay
+paying	pay
+people	person
+put	put
+ran	run
+running	run
+said	say
+saw	see
+saying	say
+says	say
+seeing	see
+seen	see
+sending	send
+sent	send
+showed	show
+showing	show
+shown	show
+spending	spend
+spent	spend
+standing	stand
+stood	stand
+taken	take
+taking	take
+teeth	tooth
+telling	tell
+thinking	think
+thought	think
+told	tell
+took	take
+understanding	understand
+understood	understand
+was	be
+went	go
+were	be
+women	woman
+worse	bad
+worst	bad
+writing	write
+written	write
+wrote	write

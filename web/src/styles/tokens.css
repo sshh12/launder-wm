@@ -1,0 +1,104 @@
+/* Registered custom properties, so the heat ramp interpolates the NUMBER and
+ * not the resolved colour (§10.6, the graft from direction B). An unregistered
+ * --a jumps; a registered <number> tweens, and color-mix() re-resolves every
+ * frame off the tweened value. This declaration must stay at the top level:
+ * @property is not allowed inside @layer. */
+@property --h {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+@property --a {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+@property --d {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@layer tokens {
+  :root {
+    /* light — §10.6. --ink-2 is 5.4:1 and --rule is 3.2:1 on --bg; both were
+       MEASURED. The bake-off's first-round palettes failed at 4.27:1 and 1.9:1,
+       so these are floors: re-measure on any change. The 21 ticks ARE the
+       scale, so --rule must clear 3:1. */
+    --bg: #e9e7e0;
+    --panel: #dddad0;
+    --ink: #1b1a17;
+    --ink-2: #5e5c53;
+    --rule: #85806f;
+    --hot: #b24318;
+    --warm: #c79a2a;
+    --cold: #2c6b67;
+
+    /* heat alpha ceiling, in %. Caps the wash so the real text stays >=4.5:1
+       at every heat level (§10.4). Light 34%, dark 45%. */
+    --cap: 34;
+    --needle-shadow: 0 1px 0 rgba(27, 26, 23, 0.22);
+
+    /* At most two border-radius values in the whole app, and zero on the
+       passage box (§10.6). This is the one non-pill radius. */
+    --r: 2px;
+
+    /* Zero webfonts (§10.6). Georgia for the passage, ui-monospace for data. */
+    --mono: ui-monospace, sfmono-regular, "SF Mono", menlo, consolas, "Liberation Mono",
+      "DejaVu Sans Mono", monospace;
+    --serif: georgia, "Iowan Old Style", "Source Serif 4", "Times New Roman", serif;
+
+    --gut: 14px;
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 24px;
+
+    /* Ripple timing (§10.4). The heating/cooling asymmetry is the whole trick:
+       symmetric timing reads as a CSS transition, asymmetric as a material. */
+    --tkdur-cool: 260ms;
+    --tkdur-heat: 340ms;
+    --tkstep: 14ms;
+
+    /* Published by main.ts from window.visualViewport, for anything that must
+       track the software keyboard (§10.3). */
+    --vvh: 100dvh;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161a;
+      --panel: #1d2026;
+      --ink: #dcddd7;
+      --ink-2: #8a9099;
+      --rule: #5c636d;
+      --hot: #e2762c;
+      --warm: #c9a94f;
+      --cold: #4cb0a3;
+      --cap: 45;
+      --needle-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+    }
+  }
+
+  /* Both modes are deliberately designed, never filter: invert() (§10.6). */
+  :root[data-theme="dark"] {
+    --bg: #14161a;
+    --panel: #1d2026;
+    --ink: #dcddd7;
+    --ink-2: #8a9099;
+    --rule: #5c636d;
+    --hot: #e2762c;
+    --warm: #c9a94f;
+    --cold: #4cb0a3;
+    --cap: 45;
+    --needle-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+  }
+
+  @media (prefers-contrast: more) {
+    :root {
+      --ink-2: #45433b;
+      --rule: #5f5b4e;
+    }
+  }
+}

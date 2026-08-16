@@ -1,0 +1,36 @@
+# data/config/triage/L1.toml — TECH_PLAN.md §6.5
+#
+# AUTHORING TIME ONLY. Every threshold here is an UNMEASURED HYPOTHESIS; the
+# first 400-candidate run is the experiment that produces these numbers, not
+# the passages. Derived from the L2 policy in §6.5, loosened where L1's job
+# differs: L1 is the first passage a stranger ever sees, so it must be
+# forgiving on placement and unforgiving on legibility.
+
+[accept]
+# Clearly detected to begin with, or there is no game — but L1 does not need
+# L2's margin, because there is no edit budget to fight.
+margin_z_min                     = 5.0
+n_scored_min                     = 80          # < 60 is "not enough game" at any level
+median_eff_choices_min           = 12.0        # < 8 is a low-entropy host: fine for L5, wrong here
+# L1 teaches the loop and the ripple, so it needs at least one visible hot run
+# to attack. Two is L2's requirement because L2 is about CHOOSING between them.
+hot_runs_min                     = 1
+# Still > 1.0: a passage where attacking the hot word beats cutting upstream
+# teaches the wrong lesson, and that is a hard reject at every level (§4.6).
+upstream_leverage_min            = 1.15
+concentration_min                = 0.25
+par_upper                        = { min = 2, max = 8 }
+exhaustive_clear_free_upto_k_min = 1
+retokenize_ok                    = true
+judge_baseline_pass              = true
+
+[reject_reasons]
+trivial_single_edit  = "best_single_edit_drop_z >= margin_z"
+impossible           = "par_upper == null or par_upper > 10"
+no_surgical_target   = "hot_runs == 0"
+teaches_wrong_lesson = "upstream_leverage < 1.0"
+
+[derive]
+# L1 has no edit_budget check, so nothing is derived. Recorded explicitly so
+# "no budget" reads as a decision rather than an omission.
+max_word_edits = "null"

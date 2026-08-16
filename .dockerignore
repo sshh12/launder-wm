@@ -1,0 +1,62 @@
+# TECH_PLAN.md §11.3. Keeps the answer key, the fat intermediates, the secrets
+# and torch out of the image.
+#
+# Verify after every build (both are CI steps):
+#   docker run --rm launder:ci sh -c 'ls -a /app | grep -qE "^\.env"'   must FAIL
+#   docker run --rm launder:ci pip list | grep -i torch                 must be EMPTY
+
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.github
+.venv
+
+# Local only. Never installed on Railway, never in the image. The one exception
+# is the manifest: `uv sync --locked` validates the lockfile against every
+# declared workspace member, so the pyproject must be present or the build
+# fails. `--package launder-serve` is what actually keeps torch out.
+packages/forge/
+!packages/forge/pyproject.toml
+
+# The fat intermediate that triage reads (token_ids, g_values_b64,
+# scored_mask_b64, word_spans, prefix_z, reject_reasons). Not in the image.
+data/candidates/
+data/runs/
+# 33 MB build input for the tokenizer packer. The packed 1.19 MB blob ships;
+# this does not.
+data/build/
+data/dev/
+
+# The answer key. The server needs exactly two fields from it (claims, par) and
+# `forge pack` writes those into data/passages/<id>.server.json — everything
+# else (reference solution, solver trace, entropy) stays out of the image
+# entirely. Excluding the answer key from the artifact that ships is worth the
+# extra file.
+data/passages/*.author.json
+
+web/node_modules
+web/dist
+node_modules
+
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.hypothesis
+
+# Model weights, ever, by accident
+*.pt
+*.pth
+*.safetensors
+*.gguf
+
+scratch/
+reports/
+exports/
+tools/
+*.md
+# NOTICE has no extension, so it is not matched above — it is COPYed explicitly
+# by the runtime stage and MUST ship: we redistribute the Gemma tokenizer.

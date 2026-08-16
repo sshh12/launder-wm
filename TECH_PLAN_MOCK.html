@@ -1,0 +1,2041 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Launder LM — UI mock</title>
+
+<!--
+================================================================================
+LAUNDER LM — FINAL UI MOCK
+Design direction: "DEAD AIR" — a printed linear instrument, not a dashboard.
+  Winner of the three-direction bake-off, with grafts from "Questioned Document"
+  (serif prose / mono data split, hue+alpha heat ramp, @property motion) and
+  "Wash Cycle" (care-symbol gate vocabulary, hard optionality cutoff, the result
+  as a physical sewn-in label).
+
+WHAT IS REAL IN THIS FILE
+  - The ripple. Token g-values are keyed on (previous 4 tokens -> this token).
+    A "watermark key" is the SET of those pairs the sampler actually emitted for
+    the authored passage. Edit token j and exactly keys j..j+4 change, so those
+    tokens re-roll to an unbiased g-value. The rightward cooling wave is
+    EMERGENT from the key model, not a decay curve painted on neighbours.
+  - Hard optionality cutoff: positions whose context has low optionality
+    (opt < 0.28) are STRUCTURALLY INCAPABLE of carrying a mark. This is the
+    CONCEPT.md guardrail — the game must never teach "spot the fancy word".
+  - Word-level Damerau-Levenshtein scoring (optimal string alignment).
+  - LCS word diff on the result card.
+  - Absolute z -> p detector mapping, so a longer passage really does read
+    higher than a short one (the intro slider's whole lesson).
+  - L5's unit test genuinely executes, in a Worker with a 500 ms kill timer.
+  - The primer's stained sentence. It is NOT a hand-painted illustration — it
+    runs the same contributions() over a real key, which is why "The" and "on"
+    are the hottest words in it and "met" / "consider" are cold. A painted
+    stain would be the one surface free to teach "spot the fancy word".
+  - Every layout, motion, contrast and a11y behaviour.
+
+WHAT IS FAKED
+  - The g-values themselves are a deterministic FNV-1a hash, not SynthID.
+    Production swaps contributions() for the real client-side TS detector; the
+    key set / context window / z-statistic shape stay exactly as they are here.
+  - The LLM judge. judgeLocal() is a stand-in with real failure modes
+    (repetition, zero-width chars, meaning drift, a tighter fence threshold).
+    Production calls the pluggable judge provider on submit only.
+  - Levels, par, thresholds, floors and optionality scale are inline DATA
+    (see LEVELS / THRESH / defaults) precisely because they must be tunable
+    from playtesting without code surgery.
+  - Streak, daily number, attempt history, network + detector-load states.
+    All reachable from the DEV strip at the top; that strip is not the game.
+================================================================================
+-->
+
+<style>
+/* registered so the heat ramp interpolates the NUMBER, not the resolved colour */
+@property --h { syntax: "<number>"; inherits: false; initial-value: 0; }
+@property --a { syntax: "<number>"; inherits: false; initial-value: 0; }
+@property --d { syntax: "<number>"; inherits: false; initial-value: 0; }
+
+@layer reset, tokens, base, components, state;
+
+@layer reset {
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body, h1, h2, p, ul, ol, li, figure, dl, dd { margin: 0; padding: 0; }
+  ul, ol { list-style: none; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { background: none; border: 0; cursor: pointer; }
+  ins, del { text-decoration: none; }
+  svg { display: block; }
+}
+
+@layer tokens {
+  :root {
+    /* light. --ink-2 is 5.4:1 and --rule is 3.2:1 on --bg; both were measured,
+       not eyeballed. The 21 ticks ARE the scale, so they must clear 3:1. */
+    --bg:      #E9E7E0;
+    --panel:   #DDDAD0;
+    --ink:     #1B1A17;
+    --ink-2:   #5E5C53;
+    --rule:    #85806F;
+    --hot:     #B24318;
+    --warm:    #C79A2A;
+    --cold:    #2C6B67;
+
+    --cap: 34;              /* heat alpha ceiling, in % */
+    --needle-shadow: 0 1px 0 rgba(27,26,23,0.22);
+    --r: 2px;
+
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
+    --serif: Georgia, "Iowan Old Style", "Source Serif 4", "Times New Roman", serif;
+
+    --gut: 14px;
+    --devh: 28px;
+    --tkdur-cool: 260ms;
+    --tkdur-heat: 340ms;
+    --tkstep: 14ms;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:    #14161A;
+      --panel: #1D2026;
+      --ink:   #DCDDD7;
+      --ink-2: #8A9099;
+      --rule:  #5C636D;
+      --hot:   #E2762C;
+      --warm:  #C9A94F;
+      --cold:  #4CB0A3;
+      --cap: 45;
+      --needle-shadow: 0 1px 0 rgba(0,0,0,0.55);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:    #14161A;
+    --panel: #1D2026;
+    --ink:   #DCDDD7;
+    --ink-2: #8A9099;
+    --rule:  #5C636D;
+    --hot:   #E2762C;
+    --warm:  #C9A94F;
+    --cold:  #4CB0A3;
+    --cap: 45;
+    --needle-shadow: 0 1px 0 rgba(0,0,0,0.55);
+  }
+  @media (prefers-contrast: more) {
+    :root { --ink-2: #45433B; --rule: #5F5B4E; }
+  }
+}
+
+@layer base {
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+    min-height: 100dvh;
+    /* clip, not hidden: hidden can promote body to a scroll container on iOS
+       and silently kill the three position:sticky descendants. */
+    overflow-x: clip;
+  }
+  :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .lbl {
+    font-size: 11px; line-height: 14px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .sr {
+    position: absolute; width: 1px; height: 1px;
+    margin: -1px; padding: 0; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  .prose { font-family: var(--serif); }
+}
+
+@layer components {
+
+  /* ---------------- dev navigator (deliberately not the game) ------------- */
+  .dev {
+    position: sticky; top: 0; z-index: 60;
+    background: var(--ink); color: var(--bg);
+    border-bottom: 1px dashed var(--ink-2);
+    padding: 5px var(--gut) 5px max(var(--gut), env(safe-area-inset-left));
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .devhead { display: flex; align-items: center; gap: 10px; }
+  .devhead b { font-weight: 500; letter-spacing: 0.2em; opacity: 0.65; }
+  .devtoggle {
+    margin-left: auto; color: var(--bg);
+    text-decoration: underline; text-underline-offset: 3px;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .devbody { display: none; padding-top: 8px; }
+  .dev[data-open="1"] .devbody { display: block; }
+  .devrow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 5px; }
+  .devrow > span { opacity: 0.55; width: 56px; flex: none; }
+  .dbtn {
+    border: 1px solid rgba(255,255,255,0.30);
+    color: var(--bg); padding: 3px 6px; border-radius: var(--r);
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    transition-property: background-color, border-color; transition-duration: 90ms;
+  }
+  .dbtn:hover { border-color: var(--bg); }
+  .dbtn[aria-pressed="true"] { background: var(--bg); color: var(--ink); border-color: var(--bg); }
+  .dev :focus-visible { outline-color: var(--bg); }
+
+  /* ---------------- shell ------------------------------------------------- */
+  .app {
+    max-width: 1120px; margin: 0 auto;
+    padding-left: max(var(--gut), env(safe-area-inset-left));
+    padding-right: max(var(--gut), env(safe-area-inset-right));
+  }
+
+  /* ---------------- rail: the instrument ---------------------------------- */
+  .rail {
+    position: sticky; top: var(--devh); z-index: 40;
+    background: var(--bg);
+    padding: 10px 0 8px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .notice {
+    display: flex; align-items: center; gap: 8px;
+    height: 22px; margin-bottom: 4px;
+    font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .notice[hidden] { display: none; }
+  .ndot {
+    width: 7px; height: 7px; flex: none;
+    border: 1px solid var(--ink-2); background: transparent;
+  }
+  .notice[data-tone="warn"] { color: var(--hot); }
+  .notice[data-tone="warn"] .ndot { border-color: var(--hot); background: var(--hot); }
+
+  .railhead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
+  .daily { font-size: 11px; letter-spacing: 0.14em; color: var(--ink-2); flex: none; }
+  .lvlchip {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink);
+    border-bottom: 1px solid var(--rule); padding-bottom: 2px;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .lvlchip em { font-style: normal; color: var(--hot); }
+  .readout { margin-left: auto; display: flex; align-items: baseline; gap: 7px; flex: none; }
+  .num {
+    font-size: 26px; line-height: 26px; font-weight: 500;
+    letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
+    transition-property: color, font-size; transition-duration: 200ms;
+  }
+  .stateword { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+  .num[data-below="1"], .stateword[data-below="1"] { color: var(--cold); }
+
+  /* meter — a printed scale. 21 hairline ticks at 5%, hard two-state fill,
+     one drop shadow in the entire file and it is on the needle. */
+  .meter { position: relative; }
+  .face {
+    position: relative; height: 34px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 0; overflow: hidden;
+  }
+  .tick { position: absolute; top: 0; width: 1px; background: var(--rule); }
+  .tick.min { height: 5px; }
+  .tick.maj { height: 10px; }
+  .track { position: absolute; left: 0; right: 0; bottom: 9px; height: 1px; background: var(--rule); }
+  .fill {
+    position: absolute; left: 0; bottom: 0; height: 9px; width: 100%;
+    background: var(--hot);
+    transform: scaleX(0); transform-origin: left center;
+    will-change: transform;
+    transition-property: transform, background-color;
+    transition-duration: 380ms;
+    transition-timing-function: cubic-bezier(.34,1.36,.64,1);
+  }
+  body.cleared .fill, .fill[data-below="1"] { background: var(--cold); }
+  .notch { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--hot); margin-left: -1px; }
+  body.cleared .notch { background: var(--cold); }
+  .peak {
+    position: absolute; top: 1px; left: 0; height: 12px; width: 1px;
+    background: var(--ink-2); margin-left: -0.5px;
+    transform: translateX(0);
+    transition-property: transform, opacity;
+    transition-duration: 1200ms; transition-timing-function: linear;
+  }
+  .peak.snap { transition-duration: 1ms; }
+  .needle {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 1px;
+    background: var(--ink);
+    box-shadow: var(--needle-shadow);
+    transform: translateX(0);
+    will-change: transform;
+    transition-property: transform;
+    transition-duration: 380ms;
+    transition-timing-function: cubic-bezier(.34,1.36,.64,1);
+  }
+  /* index mark rides the TOP of the face so nothing is clipped and it never
+     collides with the 9px fill bar */
+  .needle::after {
+    content: ""; position: absolute; left: -4px; top: 0;
+    border-left: 4.5px solid transparent;
+    border-right: 4.5px solid transparent;
+    border-top: 7px solid var(--ink);
+  }
+  .sweep {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 1px;
+    background: var(--cold); opacity: 0; pointer-events: none;
+  }
+
+  .scalerow { position: relative; height: 14px; margin-top: 3px; }
+  .scalerow span { position: absolute; top: 0; font-size: 10px; letter-spacing: 0.06em; color: var(--ink-2); }
+  .gutrow { position: relative; height: 13px; }
+  .tri {
+    position: absolute; top: -3px;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-bottom: 5px solid var(--hot); margin-left: -4px;
+  }
+  body.cleared .tri { border-bottom-color: var(--cold); }
+  .floorlbl {
+    position: absolute; top: 1px;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--hot); white-space: nowrap;
+  }
+  body.cleared .floorlbl { color: var(--cold); }
+
+  /* ---------------- passage ---------------------------------------------- */
+  .stage { padding-top: 14px; }
+  .passage {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 0;
+  }
+  .passage:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; }
+
+  /* every metric here must match between the two boxes or the mirror drifts */
+  .mirror, .raw {
+    box-sizing: border-box; display: block; width: 100%;
+    margin: 0; border: 0; padding: 16px 16px;
+    font-family: var(--serif);
+    font-size: 17px; font-weight: 400; font-style: normal;
+    line-height: 28px;
+    letter-spacing: 0; word-spacing: 0; text-indent: 0;
+    text-transform: none; text-rendering: auto;
+    font-kerning: none; font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "clig" 0, "calt" 0, "kern" 0;
+    font-variant-numeric: normal;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+    white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
+    hyphens: none; tab-size: 4; direction: ltr; unicode-bidi: normal;
+  }
+  .code .mirror, .code .raw { font-family: var(--mono); font-size: 16px; line-height: 26px; }
+  .raw {
+    position: absolute; inset: 0; height: 100%;
+    background: transparent; color: var(--ink);
+    caret-color: var(--hot); resize: none;
+    -webkit-appearance: none; appearance: none;
+    border-radius: 0; overflow: hidden; outline: none;
+  }
+  .raw[readonly] { caret-color: transparent; }
+  .mirror { color: transparent; pointer-events: none; user-select: none; min-height: 60px; }
+  .mirror.vis { color: var(--ink); }   /* intro has no textarea over it */
+
+  /* heat rides a HUE axis (warm -> hot) and an ALPHA axis. Both come off one
+     registered number so the interpolation is of the value, not the colour. */
+  .tk {
+    --h: 0; --a: 0; --d: 0;
+    background-color: color-mix(in oklab,
+      color-mix(in oklab, var(--hot) calc(var(--h) * 100%), var(--warm))
+      calc(var(--a) * var(--cap) * 1%), transparent);
+    box-shadow: inset 0 -2px 0 color-mix(in oklab, var(--hot)
+      calc(var(--a) * var(--a) * var(--cap) * 1.7%), transparent);
+    border-radius: 0;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone;
+    transition-property: --h, --a;
+    transition-duration: var(--tkdur-cool);
+    transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+    transition-delay: calc(min(var(--d), 4) * var(--tkstep));
+  }
+  .tk[data-dir="heating"] {
+    transition-duration: var(--tkdur-heat);
+    transition-timing-function: cubic-bezier(0.45, 0.05, 0.55, 0.95);
+  }
+  .tk[data-impulse] { transition-duration: 120ms; transition-delay: 0ms; }
+  .mirror.noanim .tk { transition-duration: 0ms; transition-delay: 0ms; }
+
+  /* ---------------- care-symbol gate vocabulary --------------------------- */
+  .sym { width: 15px; height: 15px; flex: none; color: var(--ink-2); }
+  .sym[data-s="pass"] { color: var(--cold); }
+  .sym[data-s="fail"] { color: var(--hot); }
+  .sym[data-s="wait"] { color: var(--ink-2); stroke-dasharray: 2.2 2.4; }
+
+  /* ---------------- status row ------------------------------------------- */
+  .status {
+    display: flex; align-items: center; gap: 10px;
+    height: 36px; border-bottom: 1px solid var(--rule);
+  }
+  .pips { display: flex; gap: 7px; align-items: center; padding: 6px 2px; }
+  .changed { margin-left: auto; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+  .changed b { font-weight: 500; color: var(--ink); font-size: 13px; }
+  .parline { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+
+  /* ---------------- action bar ------------------------------------------- */
+  .actions {
+    position: sticky; bottom: 0; z-index: 30;
+    background: var(--bg); border-top: 1px solid var(--rule);
+    padding: 10px 0 max(10px, env(safe-area-inset-bottom));
+    margin-top: 12px; display: flex; gap: 8px;
+  }
+  .btn {
+    flex: 1; height: 48px;
+    background: var(--ink); color: var(--bg);
+    border-radius: var(--r);
+    font-size: 13px; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 500;
+    transition-property: opacity; transition-duration: 120ms;
+  }
+  .btn:disabled { opacity: 0.45; cursor: default; letter-spacing: 0.10em; }
+  .btn.ghost { background: none; color: var(--ink); border: 1px solid var(--rule); flex: 0 0 auto; padding: 0 14px; }
+  .btn:focus-visible { outline-offset: 2px; }
+
+  .strip {
+    display: none; height: 36px; align-items: center; gap: 10px;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2);
+  }
+  .strip b { color: var(--ink); font-weight: 500; }
+  .strip .pips { margin-left: auto; }
+  body.typing .actions { display: none; }
+  body.typing .status { display: none; }
+  body.typing .strip {
+    display: flex;
+    position: sticky; bottom: 0; z-index: 30;
+    background: var(--bg); border-top: 1px solid var(--rule);
+    padding-bottom: env(safe-area-inset-bottom);
+    height: calc(36px + env(safe-area-inset-bottom));
+  }
+  /* typing compaction: the four things that survive are needle, notch,
+     passage, changed-count. Everything else folds. */
+  body.typing .rail { padding-top: 6px; }
+  body.typing .num { font-size: 19px; line-height: 20px; }
+  body.typing .gutrow { height: 6px; }
+  body.typing .floorlbl,
+  body.typing .scalerow,
+  body.typing .whatbtn,
+  body.typing .notice { display: none; }
+
+  /* ---------------- intro ------------------------------------------------- */
+  .introline {
+    font-family: var(--serif);
+    font-size: 17px; line-height: 27px; color: var(--ink);
+    margin: 14px 0 16px; max-width: 34ch;
+  }
+  .sliderwrap { padding: 4px 0 0; }
+  .slider { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; background: none; display: block; }
+  .slider::-webkit-slider-runnable-track { height: 2px; background: var(--rule); }
+  .slider::-moz-range-track { height: 2px; background: var(--rule); }
+  /* 2px ink blade with a 16px hit area — the borders must be TRANSPARENT for
+     background-clip:padding-box to actually clip anything */
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 28px; margin-top: -13px;
+    background: var(--ink); border-radius: 0;
+    border-left: 7px solid transparent; border-right: 7px solid transparent;
+    background-clip: padding-box;
+  }
+  .slider::-moz-range-thumb {
+    width: 2px; height: 28px; background: var(--ink); border: 0; border-radius: 0;
+  }
+  .slider:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+  .slidescale { position: relative; height: 20px; }
+  .slidescale i { position: absolute; top: 0; width: 1px; height: 5px; background: var(--rule); }
+  .slidescale i.floor { background: var(--hot); height: 9px; }
+  .slidescale u {
+    position: absolute; top: 10px; text-decoration: none;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--hot); white-space: nowrap;
+  }
+  .wordcount { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+
+  /* ---------------- sheets ------------------------------------------------ */
+  .scrim {
+    position: fixed; inset: 0; z-index: 70;
+    background: color-mix(in oklab, var(--ink) 42%, transparent);
+    display: none;
+  }
+  .scrim[data-open="1"] { display: block; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 80;
+    background: var(--bg); border-top: 1px solid var(--rule);
+    padding: 16px max(var(--gut), env(safe-area-inset-left)) max(18px, env(safe-area-inset-bottom));
+    max-height: 88dvh; overflow-y: auto; display: none;
+  }
+  .sheet[data-open="1"] { display: block; animation: rise 180ms cubic-bezier(0.22,0.61,0.36,1) 1; }
+  @keyframes rise { from { transform: translateY(14px); } to { transform: translateY(0); } }
+  .sheet.full { top: 0; max-height: none; }
+  .sheetin { max-width: 640px; margin: 0 auto; }
+  .sheethead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .sheettitle { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2); }
+  .x {
+    margin-left: auto; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px;
+  }
+
+  .verdict { font-family: var(--serif); font-size: 24px; line-height: 30px; font-weight: 400; }
+  .verdict[data-v="fail"] { color: var(--hot); }
+  .verdict[data-v="pass"] { color: var(--cold); }
+  .reason { font-family: var(--serif); margin-top: 8px; font-size: 17px; line-height: 27px; max-width: 40ch; }
+
+  /* ---------------- primer (first land, Wordle-style) --------------------- */
+  .pr-lede {
+    font-family: var(--serif); font-size: 21px; line-height: 29px;
+    margin: 2px 0 11px; max-width: 24ch; color: var(--ink);
+  }
+  .pr-body {
+    font-family: var(--serif); font-size: 16px; line-height: 26px;
+    margin: 0 0 15px; max-width: 42ch; color: var(--ink);
+  }
+  /* the demo is the real detector on a real key — see initPrimer() */
+  .pr-demo {
+    font-family: var(--serif); font-size: 16px; line-height: 28px;
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+    padding: 12px 0; margin-bottom: 9px;
+  }
+  .pr-cap {
+    font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--ink-2); line-height: 17px; margin: 0 0 17px; max-width: 38ch;
+  }
+  .pr-foot {
+    display: flex; align-items: center; gap: 14px;
+    border-top: 1px solid var(--rule); padding-top: 15px;
+  }
+  .pr-daily {
+    flex: none; font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-2);
+  }
+
+  /* the persistent way back in. A panel legend, not a chat bubble. */
+  .whatbtn {
+    flex: none; align-self: center;
+    font-size: 11px; letter-spacing: 0.06em; line-height: 1; color: var(--ink-2);
+    background: none; border: 1px solid var(--rule); border-radius: var(--r);
+    padding: 4px 6px; cursor: pointer;
+    transition-property: color, border-color; transition-duration: 120ms;
+  }
+  .whatbtn:hover { color: var(--ink); border-color: var(--ink-2); }
+  .whatbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .checks { margin-top: 14px; border-top: 1px solid var(--rule); }
+  .check { border-bottom: 1px solid var(--rule); }
+  /* the row is a disclosure: every constraint can explain itself in place.
+     "?" is the one explain-affordance in the UI — same glyph as the rail. */
+  .checkrow {
+    width: 100%; display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: center; gap: 10px;
+    padding: 10px 0;
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    font-family: inherit; color: inherit; background: none; text-align: left;
+  }
+  .check.has-x .checkrow { grid-template-columns: 20px minmax(0, 1fr) auto 14px; cursor: pointer; }
+  .cmore {
+    font-size: 11px; letter-spacing: 0; color: var(--ink-2); text-align: right;
+    transition-property: color; transition-duration: 120ms;
+  }
+  .checkrow:hover .cmore { color: var(--ink); }
+  .checkrow[aria-expanded="true"] .cmore { color: var(--hot); }
+  .checkrow:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+  .cx {
+    font-family: var(--serif); font-size: 15px; line-height: 24px;
+    text-transform: none; letter-spacing: 0; color: var(--ink);
+    padding: 0 0 13px; max-width: 42ch;
+  }
+  .cx b { font-weight: 600; }
+  .check .sym { width: 20px; height: 20px; }
+  .check .why {
+    color: var(--ink-2); letter-spacing: 0.04em; text-transform: none;
+    font-size: 11px; text-align: right; white-space: nowrap;
+  }
+
+  /* result: a sewn-in care label. The brag is the diff itself. */
+  .label { border: 1px dashed var(--rule); padding: 16px 14px; background: var(--panel); }
+  .label-top { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-2); }
+  .label-big {
+    font-size: 40px; line-height: 44px; font-weight: 500;
+    padding: 8px 0 2px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+  }
+  .label-big small { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); font-weight: 400; }
+  .label-sub { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+  .label-syms { display: flex; gap: 14px; padding: 14px 0 2px; border-top: 1px solid var(--rule); margin-top: 14px; }
+  .label-syms .sym { width: 22px; height: 22px; }
+
+  .diff { font-family: var(--serif); font-size: 17px; line-height: 29px; margin-top: 10px; word-break: break-word; }
+  .diff del { text-decoration: line-through; text-decoration-thickness: 1px; color: var(--ink-2); }
+  .diff ins {
+    text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px;
+    text-decoration-color: var(--cold); color: var(--ink);
+  }
+  .sharebox {
+    margin-top: 14px; border: 1px solid var(--rule); padding: 12px;
+    font-size: 12px; line-height: 20px; white-space: pre-wrap; color: var(--ink-2);
+  }
+
+  /* ---------------- desktop side rail ------------------------------------ */
+  .side { display: none; }
+  .ladder { border-top: 1px solid var(--rule); }
+  .rung {
+    display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
+    padding: 9px 0; border-bottom: 1px solid var(--rule);
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2);
+  }
+  .rung .n { color: var(--rule); }
+  .rung[aria-current="true"] { color: var(--ink); }
+  .rung[aria-current="true"] .n { color: var(--hot); }
+  .rung .done { margin-left: auto; color: var(--cold); }
+  .hist { margin-top: 16px; }
+  .hist li {
+    display: flex; gap: 8px; font-size: 11px; letter-spacing: 0.1em;
+    padding: 6px 0; border-bottom: 1px solid var(--rule); color: var(--ink-2);
+  }
+  .hist li b { font-weight: 500; color: var(--ink); }
+
+  .foot { padding: 18px 0 10px; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+}
+
+@layer state {
+  body[data-screen="intro"] .status,
+  body[data-screen="intro"] .strip { display: none; }
+
+  @media (min-width: 37.5em) {
+    :root { --gut: 24px; }
+    .passage, .actions, .status, .strip { max-width: 64ch; }
+    .mirror, .raw { padding: 20px 22px; }
+  }
+
+  @media (min-width: 56.25em) {
+    .stage { display: grid; grid-template-columns: minmax(42ch, 64ch) 250px; gap: 40px; align-items: start; }
+    .side { display: block; }
+    .face { height: 46px; }
+    .actions { position: static; border-top: 0; }
+    body.typing .actions { display: flex; }
+    body.typing .status { display: flex; }
+    body.typing .strip { display: none; }
+    body.typing .notice:not([hidden]) { display: flex; }
+    body.typing .scalerow { display: block; }
+    body.typing .gutrow { height: 13px; }
+    body.typing .floorlbl { display: block; }
+    body.typing .num { font-size: 26px; line-height: 26px; }
+    .sheet { left: auto; right: 24px; bottom: 24px; width: 440px; border: 1px solid var(--rule); }
+    .sheet.full { top: 24px; right: 24px; left: auto; width: 580px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tk { transition-duration: 1ms; transition-delay: 0ms; }
+    .needle, .fill, .peak { transition-duration: 1ms; }
+    .sheet[data-open="1"] { animation: none; }
+  }
+}
+</style>
+</head>
+<body data-screen="intro">
+
+<!-- ============ dev navigator (not the game) ============ -->
+<div class="dev" id="dev" data-open="0">
+  <div class="devhead">
+    <b>Dev</b>
+    <span id="devstate">intro</span>
+    <button class="devtoggle" id="devtoggle" aria-expanded="false">open</button>
+  </div>
+  <div class="devbody">
+    <div class="devrow"><span>Screen</span>
+      <button class="dbtn" data-act="primer">Primer</button>
+      <button class="dbtn" data-act="screen" data-v="intro">Intro</button>
+      <button class="dbtn" data-act="screen" data-v="play">Play</button>
+      <button class="dbtn" data-act="result">Result card</button>
+      <button class="dbtn" data-act="checksheet">Gate list</button>
+      <button class="dbtn" data-act="daily">Daily done</button>
+    </div>
+    <div class="devrow"><span>Level</span>
+      <button class="dbtn" data-act="lvl" data-v="0">1</button>
+      <button class="dbtn" data-act="lvl" data-v="1">2</button>
+      <button class="dbtn" data-act="lvl" data-v="2">3</button>
+      <button class="dbtn" data-act="lvl" data-v="3">4</button>
+      <button class="dbtn" data-act="lvl" data-v="4">5</button>
+      <button class="dbtn" data-act="lvl" data-v="5">6</button>
+    </div>
+    <div class="devrow"><span>Judge</span>
+      <button class="dbtn" data-act="judge" data-v="auto" aria-pressed="true">Auto</button>
+      <button class="dbtn" data-act="judge" data-v="pass" aria-pressed="false">Force pass</button>
+      <button class="dbtn" data-act="judge" data-v="fail" aria-pressed="false">Force fail</button>
+      <button class="dbtn" data-act="judge" data-v="error" aria-pressed="false">Call fails</button>
+    </div>
+    <div class="devrow"><span>Detector</span>
+      <button class="dbtn" data-act="det" data-v="local" aria-pressed="true">Local wasm</button>
+      <button class="dbtn" data-act="det" data-v="loading" aria-pressed="false">Loading · /detect</button>
+      <button class="dbtn" data-act="det" data-v="offline" aria-pressed="false">Offline</button>
+    </div>
+    <div class="devrow"><span>Needle</span>
+      <button class="dbtn" data-act="force" data-v="clear">Apply reference solve</button>
+      <button class="dbtn" data-act="force" data-v="reset">Restore passage</button>
+    </div>
+    <div class="devrow"><span>Theme</span>
+      <button class="dbtn" data-act="theme" data-v="auto" aria-pressed="true">Auto</button>
+      <button class="dbtn" data-act="theme" data-v="light" aria-pressed="false">Light</button>
+      <button class="dbtn" data-act="theme" data-v="dark" aria-pressed="false">Dark</button>
+      <button class="dbtn" data-act="sound">Sound: on</button>
+    </div>
+  </div>
+</div>
+
+<main class="app" id="app">
+
+  <!-- ============ the instrument ============ -->
+  <div class="rail" id="rail">
+    <div class="notice" id="notice" hidden><span class="ndot"></span><span id="noticetxt"></span></div>
+
+    <div class="railhead">
+      <span class="daily">#212</span>
+      <button class="whatbtn" id="whatbtn" aria-label="What is this?">?</button>
+      <span class="lvlchip" id="lvlchip"><em>L1</em> · Clean it</span>
+      <div class="readout">
+        <span class="num" id="num">0.0</span>
+        <span class="stateword" id="stateword">AI detected</span>
+      </div>
+    </div>
+
+    <div class="meter" id="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+         aria-valuetext="0.0 of 100. Under 42 to clear." aria-label="Watermark detector level">
+      <div class="face" id="face">
+        <div class="track"></div>
+        <div class="fill" id="fill"></div>
+        <div class="notch" id="notch"></div>
+        <div class="sweep" id="sweep"></div>
+        <div class="peak snap" id="peak"></div>
+        <div class="needle" id="needle"></div>
+      </div>
+      <div class="scalerow" id="scalerow"></div>
+      <div class="gutrow">
+        <div class="tri" id="tri"></div>
+        <div class="floorlbl" id="floorlbl">Under 42 to clear</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="sr" id="live" aria-live="polite"></p>
+
+  <div class="stage">
+    <div>
+      <!-- intro -->
+      <div class="introwrap" id="introwrap">
+        <p class="introline">The more text there is, the more sure the detector gets. Drag.</p>
+        <div class="passage" id="passageIntro">
+          <div class="mirror vis" id="mirrorIntro"></div>
+        </div>
+        <div class="sliderwrap">
+          <input class="slider" id="slider" type="range" min="6" max="76" value="10" aria-label="Words revealed">
+          <div class="slidescale" id="slidescale"></div>
+          <div class="wordcount" id="wordcount">10 words revealed</div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="begin">Start level 1</button>
+        </div>
+      </div>
+
+      <!-- play -->
+      <div class="playwrap" id="playwrap" hidden>
+        <div class="passage" id="passage">
+          <div class="mirror" id="mirror" aria-hidden="true"></div>
+          <textarea class="raw" id="raw"
+            autocorrect="off" autocapitalize="off" autocomplete="off"
+            spellcheck="false" enterkeyhint="enter" inputmode="text"
+            aria-label="Watermarked passage. Edit it to lower the detector."></textarea>
+        </div>
+
+        <div class="status">
+          <button class="pips" id="pips" aria-label="Gate checks"></button>
+          <span class="parline" id="parline">Par 5</span>
+          <span class="changed" id="changed"><b>0</b> words changed</span>
+        </div>
+
+        <div class="strip" id="strip">
+          <span id="stripcount"><b>0</b> words changed</span>
+          <button class="pips" id="pipsStrip" aria-label="Gate checks"></button>
+        </div>
+
+        <div class="actions" id="actions">
+          <button class="btn" id="check">Check</button>
+          <button class="btn ghost" id="regen" hidden>Regenerate locally</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- desktop rail -->
+    <aside class="side">
+      <div class="lbl" style="margin-bottom:8px">Levels</div>
+      <div class="ladder" id="ladder"></div>
+      <div class="hist">
+        <div class="lbl" style="margin-bottom:6px">Attempts</div>
+        <ul id="histlist"><li>none yet</li></ul>
+      </div>
+      <div class="hist">
+        <div class="lbl" style="margin-bottom:6px">Gate</div>
+        <div class="checks" id="sidechecks"></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="foot">Launder LM · local detector · gemma-3-4b-it</div>
+</main>
+
+<div class="scrim" id="scrim" data-open="0"></div>
+
+<!-- primer: opens once on first land, reopens from the ? in the rail -->
+<div class="sheet" id="primersheet" data-open="0" role="dialog" aria-modal="true" aria-labelledby="prt">
+  <div class="sheetin">
+    <div class="sheethead">
+      <span class="sheettitle" id="prt">Launder LM</span>
+      <button class="x" data-close>Close</button>
+    </div>
+
+    <p class="pr-lede">This text is watermarked.</p>
+    <p class="pr-body">When an AI writes, many different words would fit in each spot.
+      A watermark makes it choose them in a secret pattern. The text still reads
+      normally. But a detector that knows the pattern can find it.</p>
+
+    <div class="pr-demo"><div class="mirror vis" id="mirrorPrimer"></div></div>
+    <p class="pr-cap">The stain shows where the pattern is strong. It is strong where
+      many words would have fit — not where the words look clever.</p>
+
+    <p class="pr-lede">Your job: wash it out.</p>
+    <p class="pr-body">Change words until the needle falls below the line. Use as few
+      changes as you can. The text must still read well, and it must still mean the
+      same thing.</p>
+
+    <div class="pr-foot">
+      <span class="pr-daily">New passage daily</span>
+      <button class="btn" id="prplay">Play</button>
+    </div>
+  </div>
+</div>
+
+<!-- gate result sheet -->
+<div class="sheet" id="gatesheet" data-open="0" role="dialog" aria-modal="true" aria-labelledby="gv">
+  <div class="sheetin">
+    <div class="sheethead">
+      <span class="sheettitle">Gate</span>
+      <button class="x" data-close>Close</button>
+    </div>
+    <div class="verdict" id="gv" data-v="fail">Rejected</div>
+    <p class="reason" id="greason"></p>
+    <div class="checks" id="gatechecks"></div>
+    <div class="actions" id="gateactions" style="position:static;border-top:0;margin-top:14px" hidden>
+      <button class="btn" id="retryjudge">Retry the call</button>
+    </div>
+  </div>
+</div>
+
+<!-- checklist sheet -->
+<div class="sheet" id="checksheet" data-open="0" role="dialog" aria-modal="true" aria-labelledby="cst">
+  <div class="sheetin">
+    <div class="sheethead">
+      <span class="sheettitle" id="cst">Gate checks · this level</span>
+      <button class="x" data-close>Close</button>
+    </div>
+    <div class="checks" id="listchecks"></div>
+  </div>
+</div>
+
+<!-- result sheet -->
+<div class="sheet full" id="resultsheet" data-open="0" role="dialog" aria-modal="true" aria-labelledby="rt">
+  <div class="sheetin">
+    <div class="sheethead">
+      <span class="sheettitle" id="rt">Launder #212 · <span id="rlvl">L1</span></span>
+      <button class="x" data-close>Close</button>
+    </div>
+    <div class="label">
+      <div class="label-top">Cleared · machine wash</div>
+      <div class="label-big"><span id="rscore">4</span> <small>words changed</small></div>
+      <div class="label-sub">par <span id="rpar">5</span> · detector <span id="rdet">93.5 → 31.6</span></div>
+      <div class="label-syms" id="rsyms"></div>
+    </div>
+    <div class="lbl" style="margin-top:16px">The diff</div>
+    <div class="diff" id="rdiff"></div>
+    <div class="sharebox" id="rshare"></div>
+    <div class="actions" style="position:static;border-top:0;margin-top:14px">
+      <button class="btn" id="copyres">Copy result</button>
+      <button class="btn ghost" id="nextlvl">Next level</button>
+    </div>
+  </div>
+</div>
+
+<!-- daily complete sheet -->
+<div class="sheet" id="dailysheet" data-open="0" role="dialog" aria-modal="true" aria-labelledby="dt">
+  <div class="sheetin">
+    <div class="sheethead">
+      <span class="sheettitle" id="dt">Launder #212 · complete</span>
+      <button class="x" data-close>Close</button>
+    </div>
+    <div class="label">
+      <div class="label-top">Daily · six loads</div>
+      <div class="label-big"><span id="dtot">38</span> <small>words changed, total</small></div>
+      <div class="label-sub">par 43 · streak <span id="dstreak">4</span> days</div>
+      <div class="label-syms" id="dsyms"></div>
+    </div>
+    <div class="checks" id="dlist"></div>
+    <div class="sharebox" id="dshare"></div>
+    <div class="actions" style="position:static;border-top:0;margin-top:14px">
+      <button class="btn" id="copydaily">Copy result</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function () {
+
+/* ======================================================================
+   0. DATA — levels, thresholds, floors, optionality scale.
+      All of this is config on purpose: it is what gets retuned from
+      playtesting, and none of it should require touching the engine.
+   ====================================================================== */
+
+var THRESH = 42;          /* the floor, in scale percent */
+var DEFAULT_FLOOR = 50;   /* word floor; per-level override below */
+var H = 4;                /* detector context window: g depends on prev H tokens */
+var OPT_CUT = 0.28;       /* below this, a POSITION cannot carry a mark at all */
+
+var LEVELS = [
+  {
+    id: "L1", name: "Clean it", par: 5, floor: 50, optScale: 1,
+    checks: ["floor", "natural", "meaning"],
+    claim: "the 1974 recall",
+    text: "The committee's report, released without ceremony on a Friday afternoon, concluded that the 1974 recall had been handled competently by the agency but recorded far too late in the process to matter. Investigators found no evidence of deliberate concealment. They did find a filing system that made concealment unnecessary, since almost nothing that mattered was ever written down. The recommendation, buried in an appendix, was that the agency should be required to write things down."
+  },
+  {
+    id: "L2", name: "Budget", par: 4, floor: 50, optScale: 1, budget: 6,
+    checks: ["floor", "budget", "natural", "meaning"],
+    claim: "seventeen conflicting ledgers",
+    text: "Every borough kept its own ledger, and none of them agreed. The audit found seventeen versions of the same intersection, each with a different accident count, and no procedure for deciding which one was true. Clerks reconciled the numbers by hand at the end of each quarter, which is to say they picked one. The city has since bought software. The software now produces eighteen versions of the same intersection."
+  },
+  {
+    id: "L3", name: "Locked", par: 5, floor: 50, optScale: 1, locked: "the seals were intact",
+    checks: ["floor", "locked", "natural", "meaning"],
+    claim: "the second letter changed the day",
+    text: "The letter is short and its author is not identified. It states that the shipment left the yard on a Tuesday, that the seals were intact, and that nobody counted the crates. Three weeks later a second letter arrives from the same typewriter, correcting only the day. Whoever wrote it wanted the record to say Wednesday. The crates have not been found, and nobody has asked about them since."
+  },
+  {
+    id: "L4", name: "Tight fence", par: 6, floor: 50, optScale: 1, fence: true,
+    checks: ["floor", "natural", "fence"],
+    claim: "rainfall totals are unchanged",
+    text: "Rainfall in the basin has not declined. What has changed is when it arrives: three weeks later than the century average, and in fewer, heavier events. The reservoirs were sized for a distribution that no longer occurs, so they spill in April and run dry in August. Nothing in the engineering was wrong when it was built, which is the part that nobody wants to write down."
+  },
+  {
+    id: "L5", name: "Code", par: 4, floor: 0, optScale: 0.85, code: true,
+    checks: ["test", "natural"],
+    claim: "the even-length average",
+    text: "function median(xs) {\n  const s = xs.slice().sort((a, b) => a - b);\n  const m = Math.floor(s.length / 2);\n  if (s.length % 2 === 1) return s[m];\n  return (s[m - 1] + s[m]) / 2;\n}",
+    /* par-4 reference: one identifier renamed. Four tokens, unit test still
+       green, detector 49.9 -> 21.6. Code has almost nowhere to hide a mark. */
+    solution: "function median(xs) {\n  const s = xs.slice().sort((a, b) => a - b);\n  const i = Math.floor(s.length / 2);\n  if (s.length % 2 === 1) return s[i];\n  return (s[i - 1] + s[i]) / 2;\n}"
+  },
+  {
+    id: "L6", name: "Regenerate", par: 9, floor: 50, optScale: 1, fence: true, regen: true,
+    checks: ["floor", "natural", "fence"],
+    claim: "the ordering claim",
+    text: "There is a version of the argument that survives every objection raised against it, and it is not the version anyone actually makes. Stated carefully, it concedes the measurement problem, concedes the selection effect, and concedes that the correlation weakens under every reasonable control. What remains is a claim about ordering: whatever else is true, the policy came first and the decline followed, and no proposed mechanism runs the other way. That claim is small, it is boring, and it is the only part of the paper that has never been withdrawn. The rest was defended for eleven years by people who had not read the appendix."
+  }
+];
+
+/* the care-symbol vocabulary — one drawn system, and the fail state is a
+   SHAPE (a struck cross), never colour alone */
+var SYM = {
+  wash:  "M3.2 8.4h17.6l-1.5 10.2a2.2 2.2 0 0 1-2.2 1.9H6.9a2.2 2.2 0 0 1-2.2-1.9Z" +
+         "|M4.4 12.2c1.7-1.5 3.2 1.2 4.9 0s3.2 1.2 4.9 0 3.2 1.2 4.9 0" +
+         "|M4.6 8.4C6.5 5 9.2 3.6 12 3.6s5.5 1.4 7.4 4.8",
+  tri:   "M12 3.6 21 20.4H3Z",
+  tri2:  "M12 3.6 21 20.4H3Z|M10 11v6|M14 11v6",
+  drum:  "M3.4 3.6h17.2v16.8H3.4Z|M12 7.2a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6",
+  iron:  "M2.8 18.2h18.4l-2.4-8.6H8.4L6 14.2H2.8Z|M8.4 9.6C9 6.4 10.4 5 12.8 5h5",
+  test:  "M12 3.4a8.6 8.6 0 1 1 0 17.2 8.6 8.6 0 0 1 0-17.2|M7 12h10",
+  floor: "M3.4 20.2h17.2|M12 16.4V4.8|M7.4 9.4 12 4.8l4.6 4.6"
+};
+var CROSS = "M4.4 4.4 19.6 19.6|M19.6 4.4 4.4 19.6";
+
+/* blurb = the constraint explaining itself, in plain words, on tap. Written to
+   answer "what does that actually mean" — never to restate the label. */
+var CHECKDEF = {
+  floor:   { sym: "floor", label: "Word floor",
+             blurb: "You cannot win by deleting text. The passage must stay at least this long. Short text gives the detector too little to read, so the needle would fall on its own." },
+  budget:  { sym: "drum",  label: "Budget",
+             blurb: "You may change only this many words. Now where you change them matters: one change in the right place beats five in the wrong places." },
+  locked:  { sym: "iron",  label: "Verbatim phrase",
+             blurb: "One phrase must stay <b>exactly</b> as it is — same words, same order, same punctuation. You are quoting a source, so you cannot touch it. You have to work <b>around</b> it." },
+  test:    { sym: "test",  label: "median() passes",
+             blurb: "The passage is code. It must still run and pass its tests. Code has almost no free choices, so there is almost nowhere for the watermark to hide — and almost nowhere for you to edit." },
+  natural: { sym: "wash",  label: "Natural prose",
+             blurb: "The text must read like a person wrote it. Nonsense, repeated words, hidden characters and lists of keywords all fail this check." },
+  meaning: { sym: "tri",   label: "Meaning kept",
+             blurb: "The text must still say the same thing. You can rewrite a sentence completely, but you cannot drop what it said." },
+  fence:   { sym: "tri2",  label: "Close paraphrase",
+             blurb: "Stricter than <b>meaning kept</b>. You can reword, but you cannot rewrite everything. Replacing the whole passage with plainer text does lower the needle, but here that counts as avoiding the puzzle, not solving it." }
+};
+
+function symSVG(kind, state, cls) {
+  var d = SYM[kind] || SYM.tri;
+  var paths = d.split("|").map(function (p) { return '<path d="' + p + '"/>'; }).join("");
+  if (state === "fail") {
+    paths += CROSS.split("|").map(function (p) {
+      return '<path d="' + p + '" stroke-width="1.9"/>';
+    }).join("");
+  }
+  return '<svg class="sym ' + (cls || "") + '" data-s="' + state + '" viewBox="0 0 24 24" ' +
+    'fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" ' +
+    'stroke-linecap="round" aria-hidden="true">' + paths + '</svg>';
+}
+
+/* ======================================================================
+   1. DETECTOR — deterministic stand-in with the RIGHT SHAPE.
+      A token's g-value is keyed on (prev H tokens -> this token). The
+      "watermark key" S.wm is the SET of pairs the sampler emitted for the
+      authored passage. Break a pair and it re-rolls unbiased. Edit token j
+      and exactly keys j..j+H change: that IS the ripple.
+   ====================================================================== */
+
+function hash32(s) {
+  var h = 2166136261 >>> 0;
+  for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+function rnd(s) {
+  var h = hash32(s);
+  h ^= h >>> 15; h = Math.imul(h, 2246822507) >>> 0; h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+function norm(t) { return t.toLowerCase().replace(/[^a-z0-9']+/g, ""); }
+
+function split(text) {
+  var parts = text.split(/(\s+)/);
+  var toks = [], ws = [], pending = "";
+  for (var i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) { pending += parts[i]; }
+    else if (parts[i] !== "") { ws.push(pending); pending = ""; toks.push(parts[i]); }
+  }
+  ws.push(pending);
+  return { toks: toks, ws: ws };
+}
+
+/* "^" pads the start so "start of passage" is a distinct context, not empty */
+function ctxOf(toks, i) {
+  var ctx = "";
+  for (var j = i - H; j < i; j++) ctx += (j < 0 ? "^" : norm(toks[j])) + "|";
+  return ctx;
+}
+
+function makeKey(toks) {
+  var set = Object.create(null);
+  for (var i = 0; i < toks.length; i++) set[ctxOf(toks, i) + ">" + norm(toks[i])] = 1;
+  return set;
+}
+
+/* optionality is a property of the POSITION (its context), never of the word.
+   Below OPT_CUT the slot is structurally incapable of carrying a mark — this
+   is the guardrail against teaching "spot the pretentious word". */
+function contributions(toks, wm, optScale) {
+  var sc = optScale == null ? 1 : optScale;
+  var c = new Array(toks.length), ent = new Array(toks.length);
+  for (var i = 0; i < toks.length; i++) {
+    var ctx = ctxOf(toks, i);
+    var opt = rnd("O" + ctx) * sc;
+    var k = ctx + ">" + norm(toks[i]);
+    if (opt < OPT_CUT) { c[i] = 0.02 * (rnd("N" + k) - 0.5); ent[i] = 0; continue; }
+    var e = 0.28 + 0.72 * opt;
+    var u = rnd("G" + k);
+    ent[i] = e;
+    c[i] = wm[k] ? e * (0.20 + 0.30 * u) : e * (u - 0.5) * 0.5;
+  }
+  return { c: c, e: ent };
+}
+
+function zOf(c) {
+  var n = c.length; if (n === 0) return 0;
+  var s = 0; for (var i = 0; i < n; i++) s += c[i];
+  return s / Math.sqrt(n);
+}
+
+/* ABSOLUTE z -> p. Not normalised per level, so a 110-word passage really
+   does read higher than a 74-word one — which is the intro slider's lesson,
+   and it would be a lie if the readout were level-relative. */
+function absValue(z) { return 100 / (1 + Math.exp(-(z - 0.95) / 0.26)); }
+
+function heatFrom(c) {
+  var h = new Array(c.length);
+  for (var i = 0; i < c.length; i++) h[i] = Math.max(0, Math.min(1, c[i] / 0.40));
+  return h;
+}
+
+/* word-level Damerau-Levenshtein (optimal string alignment) */
+function damLev(a, b) {
+  var n = Math.min(a.length, 400), m = Math.min(b.length, 400);
+  var prev2 = null, prev = new Array(m + 1), cur, j;
+  for (j = 0; j <= m; j++) prev[j] = j;
+  for (var i = 1; i <= n; i++) {
+    cur = new Array(m + 1); cur[0] = i;
+    for (j = 1; j <= m; j++) {
+      var cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      var v = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        v = Math.min(v, prev2[j - 2] + 1);
+      }
+      cur[j] = v;
+    }
+    prev2 = prev; prev = cur;
+  }
+  return prev[m];
+}
+
+/* LCS word diff for the share card */
+function wordDiff(a, b) {
+  var n = a.length, m = b.length, out = [], i, j;
+  if (n * m > 240000) return [{ t: "eq", w: b }];
+  var L = [];
+  for (i = 0; i <= n; i++) L.push(new Uint16Array(m + 1));
+  for (i = n - 1; i >= 0; i--) for (j = m - 1; j >= 0; j--)
+    L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  i = 0; j = 0;
+  function push(t, w) {
+    var last = out[out.length - 1];
+    if (last && last.t === t) last.w.push(w); else out.push({ t: t, w: [w] });
+  }
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { push("eq", a[i]); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) { push("del", a[i]); i++; }
+    else { push("ins", b[j]); j++; }
+  }
+  while (i < n) { push("del", a[i]); i++; }
+  while (j < m) { push("ins", b[j]); j++; }
+  return out;
+}
+
+/* ======================================================================
+   2. state
+   ====================================================================== */
+
+var $ = function (id) { return document.getElementById(id); };
+
+var S = {
+  screen: "intro", lvl: 0,
+  wm: Object.create(null), origToks: [], zFull: 0, startValue: 0,
+  value: 0, lastValue: 0, peak: 0,
+  cleared: false, armed: true,
+  judge: "auto", detector: "local", sound: true,
+  prevToks: [], prevHeat: [], dist: 0,
+  history: [], done: {}, invoker: null
+};
+
+/* live, not snapshotted — toggling reduced motion mid-session must take */
+var RM = window.matchMedia("(prefers-reduced-motion: reduce)");
+var WIDE = window.matchMedia("(min-width: 56.25em)");
+
+/* ======================================================================
+   3. instrument
+   ====================================================================== */
+
+var face = $("face"), needle = $("needle"), fill = $("fill"), peakEl = $("peak"),
+    meter = $("meter"), numEl = $("num"), stateEl = $("stateword"), sweep = $("sweep"),
+    live = $("live");
+var faceW = 360, DPR = window.devicePixelRatio || 1;
+
+(function buildScale() {
+  for (var p = 0; p <= 100; p += 5) {
+    var t = document.createElement("div");
+    t.className = "tick " + (p % 25 === 0 ? "maj" : "min");
+    t.style.left = p + "%";
+    face.appendChild(t);
+  }
+  [0, 25, 50, 75, 100].forEach(function (p) {
+    var s = document.createElement("span");
+    s.textContent = String(p);
+    if (p === 0) s.style.left = "0";
+    else if (p === 100) { s.style.left = "100%"; s.style.transform = "translateX(-100%)"; }
+    else { s.style.left = p + "%"; s.style.transform = "translateX(-50%)"; }
+    $("scalerow").appendChild(s);
+  });
+  $("notch").style.left = THRESH + "%";
+  $("tri").style.left = THRESH + "%";
+  var fl = $("floorlbl");
+  fl.style.left = THRESH + "%";
+  fl.style.transform = "translateX(-50%)";
+  /* NOT "Floor" — that word is already the 50-word minimum. One word, one meaning. */
+  fl.textContent = "Under " + THRESH + " to clear";
+})();
+
+function measureFace() {
+  faceW = face.clientWidth || 360;
+  DPR = window.devicePixelRatio || 1;
+}
+measureFace();
+if (window.ResizeObserver) new ResizeObserver(function () { measureFace(); paintNeedle(S.value, true); }).observe(face);
+else window.addEventListener("resize", function () { measureFace(); paintNeedle(S.value, true); });
+
+/* detent: half-point quantisation, then snapped to whole device pixels so a
+   1px needle stays exactly 1px instead of antialiasing into two half columns
+   whose apparent weight changes as it moves. */
+function toPx(v) {
+  var q = Math.round(v * 2) / 2;
+  return Math.round((q / 100) * faceW * DPR) / DPR;
+}
+function paintNeedle(v, instant) {
+  var px = toPx(v);
+  if (instant) {
+    needle.style.transitionDuration = "0ms";
+    fill.style.transitionDuration = "0ms";
+  }
+  needle.style.transform = "translateX(" + px + "px)";
+  fill.style.transform = "scaleX(" + (Math.round(v * 2) / 2 / 100) + ")";
+  if (instant) {
+    /* force style flush before restoring durations */
+    void needle.offsetWidth;
+    needle.style.transitionDuration = "";
+    fill.style.transitionDuration = "";
+  }
+}
+
+var peakTimer = null;
+function setNeedle(v) {
+  v = Math.max(0, Math.min(100, v));
+  var d = Math.abs(v - S.lastValue);
+  /* ballistics: an overshoot on a big swing, damped on a fine one.
+     Two easings, two durations. This is what makes it read as material. */
+  var dur = RM.matches ? "1ms" : (d > 8 ? "380ms" : "160ms");
+  var ease = d > 8 ? "cubic-bezier(.34,1.36,.64,1)" : "cubic-bezier(.4,0,.2,1)";
+  needle.style.transitionDuration = dur;
+  needle.style.transitionTimingFunction = ease;
+  fill.style.transitionDuration = dur;
+  fill.style.transitionTimingFunction = ease;
+  paintNeedle(v, false);
+
+  var below = v < THRESH;
+  fill.setAttribute("data-below", below ? "1" : "0");
+  numEl.textContent = v.toFixed(1);
+  /* "Not detected", never "human" — no watermark does not prove a person wrote it,
+     and the readout must not make a claim the detector cannot support. */
+  stateEl.textContent = below ? "Not detected" : "AI detected";
+  numEl.setAttribute("data-below", below ? "1" : "0");
+  stateEl.setAttribute("data-below", below ? "1" : "0");
+  meter.setAttribute("aria-valuenow", v.toFixed(1));
+  meter.setAttribute("aria-valuetext", v.toFixed(1) + " of 100. Under " + THRESH +
+    " to clear. " + (below ? "Not detected." : "AI detected."));
+
+  /* peak hold: rises instantly, decays linearly after 2s of stillness */
+  if (v > S.peak) {
+    S.peak = v;
+    peakEl.classList.add("snap");
+    peakEl.style.transform = "translateX(" + toPx(v) + "px)";
+  }
+  clearTimeout(peakTimer);
+  peakTimer = setTimeout(function () {
+    S.peak = v;
+    if (RM.matches) peakEl.classList.add("snap"); else peakEl.classList.remove("snap");
+    peakEl.style.transform = "translateX(" + toPx(v) + "px)";
+  }, 2000);
+
+  if (below && S.armed && S.screen === "play") {
+    S.armed = false; S.cleared = true;
+    document.body.classList.add("cleared");
+    live.textContent = "Cleared. Not detected, at " + v.toFixed(1) + ".";
+    runSweep();
+    chime();
+  } else if (!below && v > THRESH + 2) {
+    S.armed = true;
+    if (S.cleared) { S.cleared = false; document.body.classList.remove("cleared"); }
+  }
+  S.lastValue = v; S.value = v;
+}
+
+function runSweep() {
+  if (RM.matches || !sweep.animate) return;
+  try {
+    sweep.animate(
+      [{ transform: "translateX(0px)", opacity: 0.9 },
+       { transform: "translateX(" + faceW + "px)", opacity: 0 }],
+      { duration: 220, easing: "linear" }
+    );
+  } catch (e) {}
+}
+
+var actx = null;
+function chime() {
+  if (!S.sound || !actx) return;
+  try {
+    var t = actx.currentTime;
+    [[528, 0.16], [792, 0.09]].forEach(function (p, i) {
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = "sine"; o.frequency.value = p[0];
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(p[1], t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+      o.connect(g); g.connect(actx.destination); o.start(t + i * 0.045); o.stop(t + 0.5);
+    });
+  } catch (e) {}
+}
+function armAudio() { if (!actx && window.AudioContext) { try { actx = new AudioContext(); } catch (e) {} } }
+window.addEventListener("pointerdown", armAudio, { once: true });
+window.addEventListener("keydown", armAudio, { once: true });
+
+/* ======================================================================
+   4. mirror — pooled spans. NEVER innerHTML on the hot path; only --h/--a,
+      --d and data-dir. Rebuilding this from a template string would silently
+      kill every transition while appearing to work.
+   ====================================================================== */
+
+function Mirror(el) {
+  this.el = el;
+  this.tk = []; this.ws = [];
+  this.br = document.createElement("br");
+  el.appendChild(this.br);
+  this.grow(0);
+}
+Mirror.prototype.grow = function (n) {
+  while (this.ws.length < n + 1) {
+    var w = document.createElement("span");
+    this.el.insertBefore(w, this.br);
+    this.ws.push(w);
+    if (this.tk.length < n) {
+      var t = document.createElement("span");
+      t.className = "tk";
+      this.el.insertBefore(t, this.br);
+      this.tk.push(t);
+    }
+  }
+  while (this.tk.length > n) this.el.removeChild(this.tk.pop());
+  while (this.ws.length > n + 1) this.el.removeChild(this.ws.pop());
+  var ref = this.br;
+  for (var i = n; i >= 0; i--) {
+    if (this.tk[i]) { this.el.insertBefore(this.tk[i], ref); ref = this.tk[i]; }
+    this.el.insertBefore(this.ws[i], ref); ref = this.ws[i];
+  }
+};
+/* text is synchronous so the box never wraps into a 100ms-stale height */
+Mirror.prototype.setText = function (toks, ws) {
+  var n = toks.length;
+  if (this.tk.length !== n) this.grow(n);
+  for (var k = 0; k < n; k++) {
+    if (this.tk[k].firstChild) { if (this.tk[k].firstChild.data !== toks[k]) this.tk[k].firstChild.data = toks[k]; }
+    else this.tk[k].textContent = toks[k];
+    if (this.ws[k].firstChild) { if (this.ws[k].firstChild.data !== ws[k]) this.ws[k].firstChild.data = ws[k]; }
+    else this.ws[k].textContent = ws[k];
+  }
+  if (this.ws[n]) {
+    if (this.ws[n].firstChild) { if (this.ws[n].firstChild.data !== ws[n]) this.ws[n].firstChild.data = ws[n]; }
+    else this.ws[n].textContent = ws[n];
+  }
+};
+/* heat is deferred; the stagger is clamped to H because nothing beyond
+   editIdx+H can change heat, so a longer tail would be theatre */
+Mirror.prototype.setHeat = function (heat, editIdx, prevHeat) {
+  for (var k = 0; k < this.tk.length; k++) {
+    var t = this.tk[k], h = heat[k] == null ? 0 : heat[k];
+    var ph = prevHeat && prevHeat[k] != null ? prevHeat[k] : h;
+    if (h > ph + 0.001) t.setAttribute("data-dir", "heating"); else t.removeAttribute("data-dir");
+    if (editIdx != null && k === editIdx) t.setAttribute("data-impulse", "1");
+    else t.removeAttribute("data-impulse");
+    var d = editIdx == null ? 0 : Math.max(0, Math.min(H, k - editIdx));
+    t.style.setProperty("--d", d);
+    t.style.setProperty("--a", h.toFixed(3));
+    t.style.setProperty("--h", h.toFixed(3));
+  }
+  if (editIdx != null && this.tk[editIdx] && !RM.matches && this.tk[editIdx].animate) {
+    try {
+      this.tk[editIdx].animate(
+        [{ boxShadow: "inset 0 0 0 1.5px var(--hot)" }, { boxShadow: "inset 0 0 0 0 transparent" }],
+        { duration: 180, easing: "ease-out" }
+      );
+    } catch (e) {}
+  }
+};
+/* a level reload with the SAME token count reuses pooled spans, so without
+   this you get a 340ms heat animation on load */
+Mirror.prototype.hardRepaint = function (toks, ws, heat) {
+  this.el.classList.add("noanim");
+  this.setText(toks, ws);
+  this.setHeat(heat, null, heat);
+  var el = this.el;
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () { el.classList.remove("noanim"); });
+  });
+};
+
+var mirror = new Mirror($("mirror"));
+var mirrorIntro = new Mirror($("mirrorIntro"));
+
+/* ======================================================================
+   5. play loop — ONE damLev, ONE contributions pass per keystroke
+   ====================================================================== */
+
+var raw = $("raw"), changedEl = $("changed"), stripCount = $("stripcount"),
+    checkBtn = $("check");
+var heatTimer = null;
+
+function L() { return LEVELS[S.lvl]; }
+
+function compute() {
+  var sp = split(raw.value);
+  var ct = contributions(sp.toks, S.wm, L().optScale);
+  var v = absValue(zOf(ct.c));
+  var dist = damLev(S.origToks, sp.toks);
+  return { sp: sp, ct: ct, v: v, dist: dist };
+}
+
+function tick(editIdx, instantHeat) {
+  var st = compute();
+  S.dist = st.dist;
+  setNeedle(st.v);
+
+  var word = st.dist === 1 ? " word changed" : " words changed";
+  changedEl.innerHTML = "<b>" + st.dist + "</b>" + word;
+  stripCount.innerHTML = "<b>" + st.dist + "</b>" + word;
+
+  var checks = checksFor(st, null, null);
+  renderPips(checks);
+  /* .side is display:none below 900px — do not pay for it there */
+  if (WIDE.matches) renderChecks($("sidechecks"), checks);
+
+  /* name the deficit on the button instead of burning a judge call to
+     tell the player something the client already knows */
+  var floor = L().floor;
+  var need = floor - st.sp.toks.length;
+  if (need > 0) {
+    checkBtn.disabled = true;
+    checkBtn.textContent = need + (need === 1 ? " word under the floor" : " words under the floor");
+  } else if (!checkBtn.dataset.busy) {
+    checkBtn.disabled = false;
+    checkBtn.textContent = "Check";
+  }
+
+  /* text now, heat on the next quiet frame */
+  mirror.setText(st.sp.toks, st.sp.ws);
+  clearTimeout(heatTimer);
+  var apply = function () {
+    var heat = heatFrom(st.ct.c);
+    mirror.setHeat(heat, editIdx, S.prevHeat);
+    S.prevHeat = heat; S.prevToks = st.sp.toks;
+  };
+  if (instantHeat) apply(); else heatTimer = setTimeout(apply, 100);
+  return st;
+}
+
+function loadLevel(i) {
+  S.lvl = i;
+  var Lv = LEVELS[i];
+  S.origToks = split(Lv.text).toks;
+  S.wm = makeKey(S.origToks);
+  S.zFull = zOf(contributions(S.origToks, S.wm, Lv.optScale).c);
+  S.startValue = absValue(S.zFull);
+  S.peak = 0; S.lastValue = 0; S.armed = true; S.cleared = false;
+  document.body.classList.remove("cleared");
+  raw.value = Lv.text;
+  S.prevToks = []; S.prevHeat = [];
+  $("passage").classList.toggle("code", !!Lv.code);
+  $("lvlchip").innerHTML = "<em>" + Lv.id + "</em> · " + Lv.name;
+  $("parline").textContent = "Par " + Lv.par;
+  $("regen").hidden = !Lv.regen;
+  buildLadder();
+
+  var sp = split(raw.value);
+  var ct = contributions(sp.toks, S.wm, Lv.optScale);
+  var heat = heatFrom(ct.c);
+  mirror.hardRepaint(sp.toks, sp.ws, heat);
+  S.prevHeat = heat; S.prevToks = sp.toks;
+  paintNeedle(0, true);
+  tick(null, true);
+  $("devstate").textContent = "play · " + Lv.id;
+}
+
+/* the caret is exact and free; diffing token arrays reports a paste at the
+   start of the changed run instead of where the player actually is */
+function editIndexFrom(caret) {
+  var before = raw.value.slice(0, caret);
+  return Math.max(0, split(before).toks.length - 1);
+}
+
+raw.addEventListener("input", function (e) {
+  if (e && e.isComposing) return;
+  tick(editIndexFrom(raw.selectionStart), false);
+});
+raw.addEventListener("compositionend", function () {
+  tick(editIndexFrom(raw.selectionStart), false);
+});
+raw.addEventListener("focus", function () { document.body.classList.add("typing"); closeAll(); });
+raw.addEventListener("blur", function () { document.body.classList.remove("typing"); });
+/* the box does not normally scroll (the mirror sizes it), but iOS will scroll
+   a textarea to keep the caret visible — keep the heat under the words */
+raw.addEventListener("scroll", function () {
+  $("mirror").style.transform = "translateY(" + (-raw.scrollTop) + "px)";
+});
+
+/* ======================================================================
+   6. gate
+   ====================================================================== */
+
+function checksFor(st, judged, unit) {
+  var Lv = L(), out = [], list = Lv.checks;
+  var text = raw.value;
+  for (var i = 0; i < list.length; i++) {
+    var k = list[i], def = CHECKDEF[k], s = "wait", why = "pending", label = def.label;
+    if (k === "floor") {
+      s = st.sp.toks.length >= Lv.floor ? "pass" : "fail";
+      label = "At least " + Lv.floor + " words";
+      why = st.sp.toks.length + " words";
+    } else if (k === "budget") {
+      s = st.dist <= Lv.budget ? "pass" : "fail";
+      label = "Budget " + Lv.budget + " words";
+      why = st.dist + " changed";
+    } else if (k === "locked") {
+      var found = text.indexOf(Lv.locked) !== -1;
+      s = found ? "pass" : "fail";
+      label = "Verbatim phrase";
+      why = found ? "found" : "missing";
+    } else if (k === "test") {
+      if (unit == null) { s = "wait"; why = "pending"; }
+      else { s = unit.ok ? "pass" : "fail"; why = unit.ok ? "2 / 2" : unit.err; }
+    } else if (k === "natural") {
+      if (judged == null) { s = "wait"; why = "pending"; }
+      else { s = judged.nat; why = judged.natWhy; }
+    } else if (k === "meaning" || k === "fence") {
+      if (judged == null) { s = "wait"; why = "pending"; }
+      else { s = judged.mean; why = judged.meanWhy; }
+    }
+    out.push({ k: k, sym: def.sym, label: label, s: s, why: why });
+  }
+  return out;
+}
+
+/* Stand-in for the LLM judge. It fails INDEPENDENTLY of the detector — a
+   gate that mirrors the needle would erase the whole thematic move. */
+function judgeLocal(st) {
+  if (S.judge === "pass") return { nat: "pass", mean: "pass", natWhy: "forced", meanWhy: "forced" };
+  if (S.judge === "fail") {
+    return { nat: "pass", mean: "fail", natWhy: "ok", meanWhy: "drifted",
+             reason: "The meaning changed — it no longer says anything about " + L().claim + "." };
+  }
+  var t = raw.value;
+  var toks = st.sp.toks.map(norm);
+  var rep = 0;
+  for (var i = 1; i < toks.length; i++) if (toks[i] && toks[i] === toks[i - 1]) rep++;
+  if (rep > 1) return { nat: "fail", mean: "pass", natWhy: "repetition", meanWhy: "intact",
+    reason: "This does not read like a person wrote it — the same word repeats " + (rep + 1) + " times in a row." };
+  if (/[​-‏­⁠﻿]/.test(t))
+    return { nat: "fail", mean: "pass", natWhy: "invisibles", meanWhy: "intact",
+      reason: "This does not read like a person wrote it — invisible characters were added to the text." };
+  var drift = st.dist / Math.max(1, S.origToks.length);
+  var fence = L().checks.indexOf("fence") !== -1;
+  if (drift > (fence ? 0.30 : 0.55))
+    return { nat: "pass", mean: "fail", natWhy: "ok", meanWhy: "drifted",
+      reason: fence
+        ? "Too much was rewritten. You changed " + Math.round(drift * 100) + "% of the passage — this level only allows rewording."
+        : "The meaning changed — it no longer says anything about " + L().claim + "." };
+  return { nat: "pass", mean: "pass", natWhy: "ok", meanWhy: "intact" };
+}
+
+/* L5's unit test genuinely runs — in a Worker, with a hard kill timer, and
+   only on submit. Compiling it per keystroke let a typed while(true) hang the
+   tab. Falls back to a guarded sync compile where blob workers are blocked
+   (opening this file over file:// is the usual case). */
+function runUnitTest(src, cb) {
+  var body = 'onmessage=function(e){var ok=false,err="";try{' +
+    'var f=new Function(e.data+"; return median;")();' +
+    'ok=(f([3,1,2])===2)&&(f([4,1,3,2])===2.5);if(!ok)err="wrong output";' +
+    '}catch(x){err="throws"}postMessage({ok:ok,err:err})}';
+  var w = null, url = null, done = false;
+  try {
+    url = URL.createObjectURL(new Blob([body], { type: "text/javascript" }));
+    w = new Worker(url);
+  } catch (e) { w = null; }
+
+  if (!w) {
+    if (/while\s*\(\s*(true|1)\s*\)|for\s*\(\s*;\s*;/.test(src)) { cb({ ok: false, err: "unbounded loop" }); return; }
+    var ok = false, err = "";
+    try {
+      var f = new Function(src + "; return median;")();
+      ok = (f([3, 1, 2]) === 2) && (f([4, 1, 3, 2]) === 2.5);
+      if (!ok) err = "wrong output";
+    } catch (x) { err = "throws"; }
+    cb({ ok: ok, err: err });
+    return;
+  }
+  var finish = function (r) {
+    if (done) return; done = true;
+    clearTimeout(kill); w.terminate();
+    if (url) URL.revokeObjectURL(url);
+    cb(r);
+  };
+  var kill = setTimeout(function () { finish({ ok: false, err: "timed out" }); }, 500);
+  w.onmessage = function (ev) { finish(ev.data); };
+  w.onerror = function () { finish({ ok: false, err: "throws" }); };
+  w.postMessage(src);
+}
+
+var pipSig = "";
+function renderPips(checks) {
+  var sig = checks.map(function (c) { return c.k + c.s; }).join(",");
+  if (sig === pipSig) return;
+  pipSig = sig;
+  var html = checks.map(function (c) { return symSVG(c.sym, c.s); }).join("");
+  var lab = "Gate checks — " + checks.map(function (c) { return c.label + ": " + c.s; }).join(", ") + ". Open the list.";
+  [$("pips"), $("pipsStrip")].forEach(function (b) {
+    b.innerHTML = html;
+    b.setAttribute("aria-label", lab);
+  });
+}
+
+function renderChecks(box, checks) {
+  var h = "";
+  for (var i = 0; i < checks.length; i++) {
+    var c = checks[i];
+    var b = CHECKDEF[c.k] ? CHECKDEF[c.k].blurb : null;
+    var id = box.id + "-x" + i;
+    var inner = symSVG(c.sym, c.s) + "<span>" + c.label +
+                '</span><span class="why">' + c.why + "</span>";
+    h += '<div class="check' + (b ? " has-x" : "") + '">';
+    if (b) {
+      h += '<button class="checkrow" type="button" aria-expanded="false" aria-controls="' + id + '">' +
+           inner + '<span class="cmore" aria-hidden="true">?</span></button>' +
+           '<div class="cx" id="' + id + '" hidden>' + b + "</div>";
+    } else {
+      h += '<div class="checkrow">' + inner + "</div>";
+    }
+    h += "</div>";
+  }
+  box.innerHTML = h;
+}
+
+/* one delegated handler covers every .checks container (gate sheet, list
+   sheet, desktop sidebar) including the ones re-rendered mid-play */
+document.addEventListener("click", function (e) {
+  var row = e.target.closest ? e.target.closest(".checkrow[aria-controls]") : null;
+  if (!row) return;
+  var body = document.getElementById(row.getAttribute("aria-controls"));
+  if (!body) return;
+  var open = row.getAttribute("aria-expanded") === "true";
+  row.setAttribute("aria-expanded", open ? "false" : "true");
+  body.hidden = open;
+});
+
+/* ======================================================================
+   7. submit
+   ====================================================================== */
+
+function busy(on) {
+  if (on) { checkBtn.dataset.busy = "1"; checkBtn.disabled = true; checkBtn.textContent = "Checking"; }
+  else { delete checkBtn.dataset.busy; checkBtn.disabled = false; checkBtn.textContent = "Check"; }
+}
+
+checkBtn.addEventListener("click", function () {
+  if (checkBtn.disabled) return;
+  raw.blur();
+  busy(true);
+  setTimeout(function () { busy(false); submit(); }, 620);
+});
+
+$("retryjudge").addEventListener("click", function () {
+  closeAll();
+  busy(true);
+  setTimeout(function () { busy(false); submit(); }, 620);
+});
+
+$("regen").addEventListener("click", function () {
+  /* L6's lesson, with no copy at all: control the sampler and the watermark
+     simply is not there. The key set empties; the needle falls to the floor. */
+  raw.value = L().text;
+  S.wm = Object.create(null);
+  S.armed = true;
+  tick(0, true);
+});
+
+function submit() {
+  var st = compute();
+  S.dist = st.dist;
+
+  if (S.detector === "offline") { gateFail("No connection", "The judge is a network call and you are offline. The detector is still local, so keep editing — the check will go through when you reconnect.", [], true); return; }
+  if (S.judge === "error") { gateFail("Judge unreachable", "The gate call failed before it returned a verdict. Nothing was scored and nothing was spent.", [], true); return; }
+
+  if (st.dist === 0) {
+    gateFail("Rejected", "Nothing was changed. The passage is the model's own output, verbatim.",
+             checksFor(st, null, null), false);
+    return;
+  }
+
+  if (L().code) {
+    runUnitTest(raw.value, function (unit) { finish(st, unit); });
+  } else {
+    finish(st, null);
+  }
+}
+
+function finish(st, unit) {
+  var judged = judgeLocal(st);              /* exactly one judge call per submit */
+  var checks = checksFor(st, judged, unit);
+  var failed = checks.filter(function (c) { return c.s === "fail"; });
+  var below = st.v < THRESH;
+
+  S.history.unshift({ d: st.dist, v: st.v, ok: failed.length === 0 && below });
+  renderHistory();
+  renderPips(checks);
+  if (WIDE.matches) renderChecks($("sidechecks"), checks);
+
+  if (failed.length) {
+    var f = failed[0], reason;
+    if (f.k === "natural" || f.k === "meaning" || f.k === "fence") reason = judged.reason || "The judge rejected it.";
+    else if (f.k === "budget") reason = st.dist + " words changed — the budget is " + L().budget + ".";
+    else if (f.k === "locked") reason = "The phrase “" + L().locked + "” is no longer verbatim.";
+    else if (f.k === "floor") reason = "Too short — the floor is " + L().floor + " words. You cannot delete your way out.";
+    else if (f.k === "test") reason = "median() no longer returns the right answer (" + f.why + ").";
+    gateFail("Rejected", reason, checks, false);
+    return;
+  }
+  if (!below) {
+    gateFail("Held", "The gate passed; the detector did not. " + st.v.toFixed(1) +
+             " is still above the floor of " + THRESH + ".", checks, false);
+    return;
+  }
+  S.done[S.lvl] = st.dist;
+  buildLadder();
+  showResult(st);
+}
+
+function gateFail(title, reason, checks, isError) {
+  $("gv").textContent = title;
+  $("gv").setAttribute("data-v", "fail");
+  $("greason").textContent = reason;
+  renderChecks($("gatechecks"), checks || []);
+  $("gatechecks").hidden = !(checks && checks.length);
+  $("gateactions").hidden = !isError;
+  openSheet("gatesheet");
+}
+
+/* ======================================================================
+   8. result + share
+   ====================================================================== */
+
+function showResult(st) {
+  var Lv = L();
+  st = st || compute();
+  $("rlvl").textContent = Lv.id;
+  $("rscore").textContent = String(st.dist);
+  $("rpar").textContent = String(Lv.par);
+  $("rdet").textContent = S.startValue.toFixed(1) + " → " + st.v.toFixed(1);
+  $("rsyms").innerHTML = Lv.checks.map(function (k) {
+    return symSVG(CHECKDEF[k].sym, "pass");
+  }).join("");
+
+  var parts = wordDiff(S.origToks, st.sp.toks);
+  var d = $("rdiff"); d.innerHTML = "";
+  parts.forEach(function (p) {
+    var el = document.createElement(p.t === "eq" ? "span" : (p.t === "del" ? "del" : "ins"));
+    el.textContent = p.w.join(" ") + " ";
+    d.appendChild(el);
+  });
+
+  $("rshare").textContent =
+    "Launder #212 · " + Lv.id + " cleared in " + st.dist + " (par " + Lv.par + ")\n" +
+    "detector " + S.startValue.toFixed(1) + " → " + st.v.toFixed(1) + "\n" +
+    "launder.lm";
+  openSheet("resultsheet");
+}
+
+function copyFrom(srcId, btn, label) {
+  var t = $(srcId).textContent;
+  if (navigator.clipboard) navigator.clipboard.writeText(t).catch(function () {});
+  btn.textContent = "Copied";
+  setTimeout(function () { btn.textContent = label; }, 1400);
+}
+$("copyres").addEventListener("click", function () { copyFrom("rshare", this, "Copy result"); });
+$("copydaily").addEventListener("click", function () { copyFrom("dshare", this, "Copy result"); });
+$("nextlvl").addEventListener("click", function () {
+  closeAll();
+  if (S.lvl >= LEVELS.length - 1) showDaily();
+  else loadLevel(S.lvl + 1);
+});
+
+function showDaily() {
+  var total = 0, lines = "";
+  LEVELS.forEach(function (Lv, i) {
+    var got = S.done[i] != null ? S.done[i] : Lv.par;
+    total += got;
+    lines += '<div class="check">' + symSVG(CHECKDEF[Lv.checks[Lv.checks.length - 1]].sym, "pass") +
+      "<span>" + Lv.id + " · " + Lv.name + '</span><span class="why">' + got + " / par " + Lv.par + "</span></div>";
+  });
+  $("dtot").textContent = String(total);
+  $("dlist").innerHTML = lines;
+  $("dsyms").innerHTML = ["wash", "drum", "iron", "tri2", "test", "tri"].map(function (k) {
+    return symSVG(k, "pass");
+  }).join("");
+  $("dshare").textContent = "Launder #212 · all six · " + total + " words changed\nstreak 4\nlaunder.lm";
+  openSheet("dailysheet");
+}
+
+function renderHistory() {
+  var ul = $("histlist");
+  if (!S.history.length) { ul.innerHTML = "<li>none yet</li>"; return; }
+  ul.innerHTML = S.history.slice(0, 6).map(function (h) {
+    return "<li><b>" + h.d + "</b> changed <span style='margin-left:auto'>" +
+      h.v.toFixed(1) + (h.ok ? " ✓" : "") + "</span></li>";
+  }).join("");
+}
+
+function buildLadder() {
+  var box = $("ladder"); box.innerHTML = "";
+  LEVELS.forEach(function (Lv, i) {
+    var b = document.createElement("button");
+    b.className = "rung";
+    if (i === S.lvl) b.setAttribute("aria-current", "true");
+    b.innerHTML = "<span class='n'>0" + (i + 1) + "</span><span>" + Lv.name + "</span>" +
+      (S.done[i] != null ? "<span class='done'>" + S.done[i] + "</span>" : "");
+    b.addEventListener("click", function () { setScreen("play"); loadLevel(i); });
+    box.appendChild(b);
+  });
+}
+
+/* ======================================================================
+   9. intro
+   ====================================================================== */
+
+var slider = $("slider");
+var introToks = split(LEVELS[0].text).toks;
+var introWm = makeKey(introToks);
+
+(function buildSlideScale() {
+  var box = $("slidescale"), max = introToks.length, min = 6;
+  slider.max = String(max);
+  for (var w = 10; w <= max; w += 10) {
+    var i = document.createElement("i");
+    i.style.left = ((w - min) / (max - min) * 100) + "%";
+    box.appendChild(i);
+  }
+  var f = document.createElement("i");
+  f.className = "floor";
+  f.style.left = ((50 - min) / (max - min) * 100) + "%";
+  box.appendChild(f);
+  var u = document.createElement("u");
+  u.textContent = "50-word floor";
+  u.style.left = ((50 - min) / (max - min) * 100) + "%";
+  u.style.transform = "translateX(-50%)";
+  box.appendChild(u);
+})();
+
+function introRender() {
+  var n = parseInt(slider.value, 10);
+  var sp = split(introToks.slice(0, n).join(" "));
+  var ct = contributions(sp.toks, introWm, 1);
+  var heat = heatFrom(ct.c);
+  mirrorIntro.setText(sp.toks, sp.ws);
+  mirrorIntro.setHeat(heat, null, null);
+  setNeedle(absValue(zOf(ct.c)));
+  $("wordcount").textContent = n + " words revealed";
+}
+slider.addEventListener("input", introRender);
+$("begin").addEventListener("click", function () { setScreen("play"); loadLevel(0); });
+
+/* ======================================================================
+   10. screens, sheets, dev strip
+   ====================================================================== */
+
+function setScreen(s) {
+  S.screen = s;
+  document.body.setAttribute("data-screen", s);
+  $("introwrap").hidden = (s !== "intro");
+  $("playwrap").hidden = (s !== "play");
+  $("devstate").textContent = s === "intro" ? "intro" : "play · " + L().id;
+  if (s === "intro") {
+    S.peak = 0; S.armed = true; S.cleared = false;
+    document.body.classList.remove("cleared");
+    introRender();
+  }
+}
+
+var app = $("app"), dev = $("dev");
+function openSheet(id) {
+  closeAll();
+  S.invoker = document.activeElement;
+  $(id).setAttribute("data-open", "1");
+  $("scrim").setAttribute("data-open", "1");
+  app.inert = true; dev.inert = true;
+  var x = $(id).querySelector(".x"); if (x) x.focus();
+}
+function closeAll() {
+  var any = false;
+  ["primersheet", "gatesheet", "checksheet", "resultsheet", "dailysheet"].forEach(function (i) {
+    if ($(i).getAttribute("data-open") === "1") any = true;
+    $(i).setAttribute("data-open", "0");
+  });
+  $("scrim").setAttribute("data-open", "0");
+  app.inert = false; dev.inert = false;
+  if (any && S.invoker && S.invoker.focus) { try { S.invoker.focus(); } catch (e) {} }
+  S.invoker = null;
+}
+document.querySelectorAll("[data-close]").forEach(function (b) { b.addEventListener("click", closeAll); });
+$("scrim").addEventListener("click", closeAll);
+document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeAll(); });
+
+function openChecklist() {
+  renderChecks($("listchecks"), checksFor(compute(), null, null));
+  openSheet("checksheet");
+}
+$("pips").addEventListener("click", openChecklist);
+$("pipsStrip").addEventListener("click", openChecklist);
+
+/* ---- primer -------------------------------------------------------------
+   The stained sentence is not an illustration: it runs the same
+   contributions() over a real key, so the cold slots are cold because the
+   POSITION had no options — never because the word looks plain. If this were
+   a hand-painted picture it would be the one place in the product allowed to
+   teach the false heuristic, so it isn't hand-painted. */
+var mirrorPrimer = new Mirror($("mirrorPrimer"));
+var PRIMER_TEXT =
+  "The committee met on Thursday to consider whether the proposal deserved another year of funding.";
+(function initPrimer() {
+  var sp = split(PRIMER_TEXT);
+  var ct = contributions(sp.toks, makeKey(sp.toks), 1);
+  mirrorPrimer.hardRepaint(sp.toks, sp.ws, heatFrom(ct.c));
+})();
+
+function openPrimer() {
+  $("prplay").textContent = S.screen === "play" ? "Back" : "Play";
+  openSheet("primersheet");
+}
+$("whatbtn").addEventListener("click", openPrimer);
+$("prplay").addEventListener("click", closeAll);
+
+/* Wordle's contract: once on first land, then only when asked for.
+   Called from boot, after the intro has painted — so closing the primer
+   reveals a finished screen, not one assembling itself. */
+var PRIMER_SEEN = "launderlm.primer.v1";
+function firstLandPrimer() {
+  var seen = false;
+  try { seen = localStorage.getItem(PRIMER_SEEN) === "1"; } catch (e) {}
+  if (seen) return;
+  try { localStorage.setItem(PRIMER_SEEN, "1"); } catch (e) {}
+  openPrimer();
+}
+
+function setNotice() {
+  var n = $("notice"), t = $("noticetxt");
+  if (S.detector === "loading") {
+    n.hidden = false; n.setAttribute("data-tone", "warn");
+    t.textContent = "Detector loading · scoring on /detect";
+  } else if (S.detector === "offline") {
+    n.hidden = false; n.setAttribute("data-tone", "warn");
+    t.textContent = "Offline · needle is local, the gate is not";
+  } else {
+    n.hidden = true; n.removeAttribute("data-tone");
+  }
+  syncDevHeight();
+}
+
+$("devtoggle").addEventListener("click", function () {
+  var open = dev.getAttribute("data-open") === "1";
+  dev.setAttribute("data-open", open ? "0" : "1");
+  this.textContent = open ? "open" : "close";
+  this.setAttribute("aria-expanded", open ? "false" : "true");
+  syncDevHeight();
+});
+/* mock only: the production rail's sticky offset must not be wired to a
+   debug element. Here it is, so the strip can expand without covering it. */
+function syncDevHeight() {
+  document.documentElement.style.setProperty("--devh", dev.offsetHeight + "px");
+}
+if (window.ResizeObserver) new ResizeObserver(syncDevHeight).observe(dev);
+syncDevHeight();
+
+function pressGroup(act, v) {
+  dev.querySelectorAll('[data-act="' + act + '"]').forEach(function (b) {
+    b.setAttribute("aria-pressed", b.getAttribute("data-v") === v ? "true" : "false");
+  });
+}
+
+dev.addEventListener("click", function (e) {
+  var b = e.target.closest(".dbtn"); if (!b) return;
+  var act = b.getAttribute("data-act"), v = b.getAttribute("data-v");
+  if (act === "primer") { openPrimer(); }
+  else if (act === "screen") { setScreen(v); if (v === "play") loadLevel(S.lvl); }
+  else if (act === "lvl") { setScreen("play"); loadLevel(parseInt(v, 10)); }
+  else if (act === "judge") { S.judge = v; pressGroup("judge", v); }
+  else if (act === "det") { S.detector = v; pressGroup("det", v); setNotice(); }
+  else if (act === "theme") {
+    pressGroup("theme", v);
+    if (v === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", v);
+  }
+  else if (act === "sound") { S.sound = !S.sound; b.textContent = "Sound: " + (S.sound ? "on" : "off"); }
+  else if (act === "result") { applySolve(); setTimeout(function () { showResult(compute()); }, 30); }
+  else if (act === "checksheet") { setScreen("play"); openChecklist(); }
+  else if (act === "daily") { showDaily(); }
+  else if (act === "force" && v === "clear") { applySolve(); }
+  else if (act === "force" && v === "reset") { setScreen("play"); loadLevel(S.lvl); }
+});
+
+/* reference solve. L5 ships an authored solution because it has to keep the
+   unit test green. Everything else is solved by picking, at each step, the
+   single substitution that drops the needle furthest — which lands upstream
+   of the hottest RUN, not on the hottest word. That is exactly the skill the
+   ripple exists to teach, and it is why the solver beats par-by-word-count. */
+var SWAPS = ["then", "also", "still", "again", "since", "here", "so", "yet", "now", "thus", "later", "once"];
+function protectedIdx(toks, phrase) {
+  var set = Object.create(null);
+  if (!phrase) return set;
+  var p = phrase.split(/\s+/).map(norm);
+  for (var i = 0; i + p.length <= toks.length; i++) {
+    var hit = true;
+    for (var j = 0; j < p.length; j++) if (norm(toks[i + j]) !== p[j]) { hit = false; break; }
+    if (hit) for (j = 0; j < p.length; j++) set[i + j] = 1;
+  }
+  return set;
+}
+function applySolve() {
+  setScreen("play");
+  if (!S.origToks.length) loadLevel(S.lvl);
+  var Lv = L();
+  if (Lv.solution) { raw.value = Lv.solution; S.armed = true; tick(0, true); return; }
+
+  var toks = S.origToks.slice();
+  var lock = protectedIdx(toks, Lv.locked);
+  var used = Object.create(null), first = null;
+  var cap = Lv.budget != null ? Lv.budget : 12;
+  for (var e = 0; e < cap; e++) {
+    if (absValue(zOf(contributions(toks, S.wm, Lv.optScale).c)) < THRESH - 3) break;
+    var best = -1, bestV = Infinity;
+    for (var i = 0; i < toks.length; i++) {
+      if (used[i] || lock[i]) continue;
+      var t2 = toks.slice();
+      t2[i] = SWAPS[e % SWAPS.length];
+      var v = absValue(zOf(contributions(t2, S.wm, Lv.optScale).c));
+      if (v < bestV) { bestV = v; best = i; }
+    }
+    if (best < 0) break;
+    used[best] = 1;
+    toks[best] = SWAPS[e % SWAPS.length];
+    if (first == null || best < first) first = best;
+  }
+  raw.value = toks.join(" ");
+  S.armed = true;
+  tick(first == null ? 0 : first, true);
+}
+
+/* ======================================================================
+   11. boot
+   ====================================================================== */
+
+RM.addEventListener && RM.addEventListener("change", function () { paintNeedle(S.value, true); });
+WIDE.addEventListener && WIDE.addEventListener("change", function () {
+  if (WIDE.matches) renderChecks($("sidechecks"), checksFor(compute(), null, null));
+});
+
+buildLadder();
+renderHistory();
+setNotice();
+slider.value = "10";
+setScreen("intro");
+requestAnimationFrame(function () { introRender(); firstLandPrimer(); });
+
+})();
+</script>
+</body>
+</html>
