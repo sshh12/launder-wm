@@ -11,7 +11,10 @@
       "alembic/**",
       "pyproject.toml",
       "uv.lock",
-      "Dockerfile"
+      "Dockerfile",
+      "railway.json",
+      "alembic.ini",
+      "NOTICE"
     ]
   },
   "deploy": {
