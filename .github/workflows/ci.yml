@@ -33,8 +33,20 @@ jobs:
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: launder_test
+        # `-U postgres -d launder_test`, NOT a bare `pg_isready`. The health
+        # command runs as root inside the container, and bare `pg_isready`
+        # defaults the role to the invoking OS user — so every probe answered
+        # `FATAL: role "root" does not exist`, the service never went healthy,
+        # and the whole python job failed before its first step.
+        #
+        # It failed that way on every push for two commits and nobody noticed,
+        # which is the more important half of this bug: the deployment went out
+        # anyway. This workflow's own header says "Railway autodeploys with
+        # 'Wait for CI', so the deployment sits in WAITING until these finish
+        # and becomes SKIPPED if any fail" — production is currently serving a
+        # commit whose CI was red, so that is not what the service does today.
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d launder_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
