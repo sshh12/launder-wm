@@ -27,19 +27,22 @@
    * The four things that NEVER collapse at any width are the needle, the
    * threshold notch, the passage box and the live words-changed count. Those
    * four are the game. Everything else folds. */
-  .page[data-typing="1"] .actions,
   .page[data-typing="1"] .status {
     display: none;
   }
+  /* The submit bar stays sticky and on screen: the status row folds into it as
+     the strip, and CHECK compacts to sit beside it. Hiding the button while
+     the keyboard was up left no visible way to finish (§10.5). */
   .page[data-typing="1"] .strip {
     display: flex;
-    position: sticky;
-    bottom: 0;
-    z-index: 30;
-    background: var(--bg);
-    border-top: 1px solid var(--rule);
-    padding-bottom: env(safe-area-inset-bottom);
-    height: calc(36px + env(safe-area-inset-bottom));
+    flex: 1;
+  }
+  .page[data-typing="1"] .playwrap .actions {
+    margin-top: 8px;
+  }
+  .page[data-typing="1"] .playwrap .actions .btn {
+    flex: 0 0 auto;
+    padding: 0 18px;
   }
   .page[data-typing="1"] .rail {
     padding-top: 6px;
@@ -105,12 +108,18 @@
       border-top: 0;
     }
     /* There is no keyboard eating the viewport here, so nothing compacts. */
-    .page[data-typing="1"] .actions,
     .page[data-typing="1"] .status {
       display: flex;
     }
     .page[data-typing="1"] .strip {
       display: none;
+    }
+    .page[data-typing="1"] .playwrap .actions {
+      margin-top: var(--sp-3);
+    }
+    .page[data-typing="1"] .playwrap .actions .btn {
+      flex: 1;
+      padding: 0;
     }
     .page[data-typing="1"] .notice:not([hidden]) {
       display: flex;

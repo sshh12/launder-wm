@@ -557,13 +557,14 @@
               <span class="changed" id="changed"></span>
             </div>
 
-            <!-- keyboard-open compaction: a 34px status strip, no submit path -->
-            <div class="strip" id="strip">
-              <span class="changed" id="stripcount"></span>
-              <button class="pips" id="pipsStrip" type="button"></button>
-            </div>
-
+            <!-- keyboard-open compaction: the status row folds into the sticky
+                 submit bar as a strip beside a compact CHECK, so the way to
+                 finish stays on screen while the keyboard is up -->
             <div class="actions" id="actions">
+              <div class="strip" id="strip">
+                <span class="changed" id="stripcount"></span>
+                <button class="pips" id="pipsStrip" type="button"></button>
+              </div>
               <button class="btn" id="check" type="button" data-copy="screen.action"></button>
             </div>
           </div>

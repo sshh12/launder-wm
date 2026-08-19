@@ -106,14 +106,15 @@
     outline-offset: 2px;
   }
 
-  /* While the textarea is focused the submit bar collapses to a status strip:
-     submitting costs an API call and a mis-tap costs a gate rejection (§10.5).
-     Enter inserts a newline; there is no accidental submit path. */
+  /* While the textarea is focused the status row folds into the submit bar as
+     this strip, beside a compact CHECK — the button never leaves the screen,
+     because on a phone the keyboard-open state is where the player finishes.
+     Enter still inserts a newline; the only submit path is a deliberate tap. */
   .strip {
     display: none;
-    height: 36px;
     align-items: center;
     gap: 10px;
+    min-width: 0;
     font-size: 11px;
     letter-spacing: 0.12em;
     text-transform: uppercase;

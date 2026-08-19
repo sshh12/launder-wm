@@ -263,20 +263,50 @@ test.describe("the campaign", () => {
 test.describe("mobile, 390x844 with the keyboard open", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("collapses to the status strip while typing and keeps the four essentials", async ({
+  test("folds the status row into the submit bar while typing and keeps the four essentials", async ({
     page,
   }) => {
     await returning(page);
     await page.locator("#raw").click();
     await expect(page.locator("body")).toHaveAttribute("data-typing", "1");
-    // There is no accidental submit path while typing (§10.5).
-    await expect(page.locator("#actions")).toBeHidden();
+    // The way to finish never leaves the screen: CHECK stays visible in the
+    // sticky bar, with the status strip folded in beside it (§10.5).
+    await expect(page.locator("#actions")).toBeVisible();
+    await expect(page.locator("#check")).toBeVisible();
     await expect(page.locator("#strip")).toBeVisible();
     // Never collapses at any width: needle, notch, passage box, changed count.
     await expect(page.locator("#needle")).toBeVisible();
     await expect(page.locator("#notch")).toBeVisible();
     await expect(page.locator("#passage")).toBeVisible();
     await expect(page.locator("#stripcount")).toBeVisible();
+  });
+
+  test("CHECK is tappable with the keyboard still up, and it submits", async ({ page }) => {
+    await returning(page);
+    await page.route("**/api/submit", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          cleared: true,
+          provisional: false,
+          score: { distance: 4, ops: [] },
+          detector: { score: 0.5, z: 1.1, z_star: 2.3263, n_scored: 168 },
+          failure: null,
+          trace: [],
+          par: 4,
+          rank: null,
+          share: "",
+        }),
+      }),
+    );
+    await page.locator("#raw").click();
+    await expect(page.locator("body")).toHaveAttribute("data-typing", "1");
+    // The tap that ends a run is made while typing — the bar must not have
+    // folded the button away.
+    await page.locator("#check").click();
+    await expect(page.locator("#resultsheet")).toHaveAttribute("data-open", "1");
+    await expect(page.locator("body")).toHaveAttribute("data-typing", "0");
   });
 
   test("Enter inserts a newline instead of submitting", async ({ page }) => {
